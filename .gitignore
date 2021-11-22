@@ -4,7 +4,7 @@
 **.env
 **/build
 yarn-error.log
-src/api*
+src/api/v1*
 src/models*
 src/services/auth*
 .git_old_bnylund*
