@@ -1,0 +1,112 @@
+let match = {
+  bestOf: 5,
+  teamSize: 3,
+  matchTitle: 'Rocket League',
+  hasWinner: false,
+  winner: -1,
+} as Base.Match
+
+export function updateMatch(data: Partial<Base.Match>) {
+  Object.keys(data).forEach((val) => {
+    if (data[val] === undefined) delete match[val]
+    else match[val] = data[val]
+  })
+}
+
+// Base structures. Most of these values can be modified by the control board.
+export namespace Base {
+  export interface Game {
+    teams: Base.Team[]
+    winner: number
+    hasWinner: boolean
+    [key: string]: any
+  }
+
+  export interface Team {
+    roster: string[]
+    colors: Base.Colors
+    name: string
+    avatar: string
+    score: number
+    series: number
+    [key: string]: any
+  }
+
+  export interface Player {
+    name: string
+    [key: string]: any
+  }
+
+  export interface Match {
+    game: Base.Game
+    bestOf: number
+    teamSize: number
+    matchTitle: string
+    hasWinner: boolean
+    winner: number
+    [key: string]: any
+  }
+
+  export interface Colors {
+    primary_color: string
+    secondary_color: string
+  }
+}
+
+// Anything below this point includes game-specific structures. All of these values will be auto-populated from update_state.
+export namespace RocketLeague {
+  export interface Game extends Base.Game {
+    arena: string
+    ballSpeed: number
+    ballTeam: number
+    hasTarget: boolean
+    isOT: boolean
+    isReplay: boolean
+    target: string
+    time: number
+    ballPosition: RocketLeague.Position
+    id: string
+  }
+
+  export interface Team extends Base.Team {
+    players: RocketLeague.Player[]
+  }
+
+  export interface Player extends Base.Player {
+    id: string
+    primaryID: string
+    team: number
+    score: number
+    goals: number
+    shots: number
+    assists: number
+    saves: number
+    touches: number
+    carTouches: number
+    hasCar: boolean
+    demos: number
+    speed: number
+    boost: number
+    isSonic: boolean
+    isDead: boolean
+    attacker: string
+    location: RocketLeague.Location
+    onWall: boolean
+    onGround: boolean
+    isPowersliding: boolean
+  }
+
+  export interface Location extends RocketLeague.Position {
+    roll: number
+    pitch: number
+    yaw: number
+  }
+
+  export interface Position {
+    x: number
+    y: number
+    z: number
+  }
+}
+
+export default match

@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "es2016",
+    "module": "commonjs",
+    "outDir": "./build",
+    "typeRoots": ["./node_modules/@types", "./types"],
+    "allowJs": true,
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true
+  },
+  "include": ["src/**/*", ".env"],
+  "exclude": ["node_modules", "types"]
+}

@@ -1,0 +1,4 @@
+{
+    "ext": "js,ts,json",
+    "ignore": ["./build", "./build/", "./node_modules"]
+  }
