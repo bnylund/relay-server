@@ -1,11 +1,10 @@
 const joi = require('joi')
 
 const env = joi.object({
-  NODE_ENV: joi.string().allow('dev', 'production', 'test', 'local').required(),
+  NODE_ENV: joi.string().allow('dev', 'production', 'test', 'local'),
   UPDATE_RATE: joi.number().required(),
   PORT: joi.number().required(),
   MONGO_URL: joi.string().required(),
-  JWT_SIGNING_KEY: joi.string().required(),
 })
 
 const { error, value } = env.validate(process.env, { allowUnknown: true })

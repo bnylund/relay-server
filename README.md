@@ -1,6 +1,6 @@
 # Relay
 
-[![Node.js CI](https://github.com/bnylund/relay-server/actions/workflows/node.js.yml/badge.svg?branch=main)](https://github.com/bnylund/relay-server/actions/workflows/node.js.yml)
+[![Node.js CI](https://github.com/mn-rocket-league/relay-server/actions/workflows/node.js.yml/badge.svg?branch=main)](https://github.com/mn-rocket-league/relay-server/actions/workflows/node.js.yml)
 
 Here you will find the source code used to provide game data to clients. For data transportation it uses [socket.io 4.x](https://socket.io/docs/v4/).
 
