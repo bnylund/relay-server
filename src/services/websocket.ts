@@ -32,7 +32,7 @@ const websocket = {
 } as Websocket
 
 /*
-  DO NOT RUN THIS VERSION (THIS GIT COMMIT) ON PROD, ALL TOKENS WILL VALIDATE. LOCAL ONLY UNTIL AUTH IS DONE! (like pretty please)
+  DO NOT RUN THIS VERSION (THIS GIT COMMIT) ON PROD, ALL TOKENS WILL VALIDATE. LOCAL ONLY UNTIL AUTH IS DONE! (like pretty please, don't run on prod)
 */
 export function initialize(http: HTTPServer) {
   const io = new Server(http, {
