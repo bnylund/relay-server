@@ -32,6 +32,5 @@ jobs:
           PORT: ${{ secrets.PORT }}
           NODE_ENV: local
           RELAY_ENV: test
-          UPDATE_RATE: 1000
           MONGO_URL: ${{ secrets.MONGO_URL }}
           JWT_SIGNING_KEY: ${{ secrets.JWT_SIGNING_KEY }}

@@ -10,6 +10,7 @@ export class Auth {
 }
 
 export class Websocket {
+  static MATCH_ID: string = 'a1b8e4ff-8ff5-4089-b9c1-fa59472efa58'
   static UPDATE_STATE: any = {
     game: 'ROCKET_LEAGUE',
     event: 'game:update_state',
@@ -57,7 +58,6 @@ export class Websocket {
   static MATCH_UPDATE: any = {
     bestOf: 7,
     teamSize: 4,
-    matchTitle: 'TEST TITLE',
     hasWinner: false,
     winner: -1,
     game: {

@@ -1,16 +1,15 @@
-let match = {
-  bestOf: 5,
-  teamSize: 3,
-  matchTitle: 'Rocket League',
-  hasWinner: false,
-  winner: -1,
-} as Base.Match
+let matches: Base.Match[] = []
 
-export function updateMatch(data: Partial<Base.Match>) {
+export function updateMatch(id: string, data: Partial<Base.Match>) {
+  const match = matches.find((x) => x.id === id)
+  if (!match) {
+    return undefined
+  }
   Object.keys(data).forEach((val) => {
-    if (data[val] === undefined) delete match[val]
+    if (data[val] === null) delete match[val]
     else match[val] = data[val]
   })
+  return match
 }
 
 // Base structures. Most of these values can be modified by the control board.
@@ -38,12 +37,13 @@ export namespace Base {
   }
 
   export interface Match {
-    game: Base.Game
+    game?: Base.Game
     bestOf: number
     teamSize: number
-    matchTitle: string
     hasWinner: boolean
     winner: number
+    id: string
+    stats_id: string // Send assigned match _id from stats platform so we can grab additional information about the match
     [key: string]: any
   }
 
@@ -109,4 +109,4 @@ export namespace RocketLeague {
   }
 }
 
-export default match
+export default matches

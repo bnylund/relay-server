@@ -1,7 +1,8 @@
 import { io, Socket } from 'socket.io-client'
-import { Base, RocketLeague } from './live'
+import matches, { Base, RocketLeague } from './live'
 import { expect } from 'chai'
 import { Auth, Websocket } from '../tests/constants'
+import socketServer from './websocket'
 
 let websocket: Socket
 
@@ -10,7 +11,8 @@ after(() => {
 })
 
 describe('Websocket', () => {
-  it('should successfully connect to server', function (done) {
+  it('should connect to the server', (done) => {
+    if (websocket) websocket.close()
     websocket = io(`http://localhost:${process.env.PORT}`, {
       autoConnect: false,
     })
@@ -19,18 +21,21 @@ describe('Websocket', () => {
     })
     websocket.connect()
   })
-  it('should get the current match', (done) => {
-    websocket.emit('match:get', (match: Base.Match, err?: Error) => {
-      expect(err).to.not.exist
-      expect(match).to.exist
-      expect(match.bestOf).to.be.equal(5)
-      done()
+  it('should create a new match', () => {
+    matches.push({
+      bestOf: 5,
+      teamSize: 3,
+      hasWinner: false,
+      winner: -1,
+      id: Websocket.MATCH_ID,
+      stats_id: '',
     })
+    expect(matches.length).to.be.equal(1)
   })
-  it("should fail to get the current game when it hasn't started", (done) => {
-    websocket.emit('game:get', (game: Base.Game, err?: Error) => {
-      expect(err).to.exist
-      expect(game).to.be.equal(null)
+  it('should get all running matches', (done) => {
+    websocket.emit('match:get_all', (matches: Base.Match[]) => {
+      expect(matches).to.exist
+      expect(matches.length).to.be.equal(1)
       done()
     })
   })
@@ -48,6 +53,16 @@ describe('Websocket', () => {
   )
 
   describe('Plugin', () => {
+    before((done) => {
+      if (websocket) websocket.close()
+      websocket = io(`http://localhost:${process.env.PORT}`, {
+        autoConnect: false,
+      })
+      websocket.on('connect', () => {
+        done()
+      })
+      websocket.connect()
+    })
     beforeEach(() => {
       websocket.removeAllListeners('game:update_state')
       websocket.removeAllListeners('game:match_ended')
@@ -63,9 +78,16 @@ describe('Websocket', () => {
         done()
       })
     })
+    it('should successfully be assigned to a match', (done) => {
+      websocket.emit('relay:assign', websocket.id, Websocket.MATCH_ID, () => {
+        done()
+      })
+    })
     it('should successfully parse an update_state event - RL', (done) => {
       websocket.on('game:update_state', () => {
-        websocket.emit('game:get', (game: RocketLeague.Game, err?: Error) => {
+        websocket.emit('match:get', Websocket.MATCH_ID, (match: Base.Match) => {
+          expect(match).to.exist
+          const { game } = match
           expect(game.arena).to.be.equal('DFH Stadium')
           expect(game.ballSpeed).to.be.equal(67.2315)
           expect(game.ballTeam).to.be.equal(0)
@@ -89,7 +111,7 @@ describe('Websocket', () => {
     it('should successfully parse an update_state event - CS:GO')
     it('should successfully parse a match_ended event', (done) => {
       websocket.on('game:match_ended', () => {
-        websocket.emit('match:get', (match: Base.Match) => {
+        websocket.emit('match:get', Websocket.MATCH_ID, (match: Base.Match) => {
           expect(match.hasWinner).to.be.false
           expect(match.game.hasWinner).to.be.true
           expect(match.game.winner).to.be.equal(1)
@@ -101,7 +123,7 @@ describe('Websocket', () => {
     })
     it('should successfully parse a match_destroyed event', (done) => {
       websocket.on('game:match_destroyed', () => {
-        websocket.emit('match:get', (match: Base.Match) => {
+        websocket.emit('match:get', Websocket.MATCH_ID, (match: Base.Match) => {
           expect(match.game).to.be.undefined
           done()
         })
@@ -111,6 +133,16 @@ describe('Websocket', () => {
   })
 
   describe('Control Board', () => {
+    before((done) => {
+      if (websocket) websocket.close()
+      websocket = io(`http://localhost:${process.env.PORT}`, {
+        autoConnect: false,
+      })
+      websocket.on('connect', () => {
+        done()
+      })
+      websocket.connect()
+    })
     beforeEach(() => {
       websocket.removeAllListeners('match:updated')
       websocket.removeAllListeners('match:team_set')
@@ -126,18 +158,25 @@ describe('Websocket', () => {
       })
     })
     it('should successfully update the match', (done) => {
-      websocket.on('match:updated', (match: Base.Match) => {
+      websocket.on('match:updated', (id: string, match?: Base.Match) => {
+        console.log(id)
+        console.log(match)
+        expect(id).to.be.equal(Websocket.MATCH_ID)
         expect(match.bestOf).to.be.equal(7)
         expect(match.teamSize).to.be.equal(4)
-        expect(match.matchTitle).to.be.equal('TEST TITLE')
         expect(match.hasWinner).to.be.false
         expect(match.winner).to.be.equal(-1)
+        expect(match.id).to.be.equal(Websocket.MATCH_ID)
         done()
       })
-      websocket.emit('match:update', Websocket.MATCH_UPDATE)
+      websocket.emit('match:update', Websocket.MATCH_ID, Websocket.MATCH_UPDATE)
     })
     it('should successfully set a team', (done) => {
-      websocket.on('match:team_set', (teamnum: number, team: Base.Team) => {
+      websocket.on('match:team_set', (match: string, teamnum: number, team: Base.Team) => {
+        console.log(match)
+        console.log(teamnum)
+        console.log(team)
+        expect(match).to.be.equal(Websocket.MATCH_ID)
         expect(teamnum).to.be.equal(0)
         expect(team.roster.length).to.be.equal(3)
         expect(team.name).to.be.equal('Test Team')
@@ -146,12 +185,84 @@ describe('Websocket', () => {
         expect(team.series).to.be.equal(0)
         done()
       })
-      websocket.emit('match:set_team', 0, Websocket.TEAM_UPDATE, (err) => {})
+      console.log(`emitting for match id ${Websocket.MATCH_ID}`)
+      console.log(matches)
+      websocket.emit('match:set_team', Websocket.MATCH_ID, 0, Websocket.TEAM_UPDATE, (err?: string) => {
+        console.log(`err: ${err}`)
+      })
     })
     it('should error out when setting an out of bounds team', (done) => {
-      websocket.emit('match:set_team', 3, Websocket.TEAM_UPDATE, (err?: string) => {
+      websocket.emit('match:set_team', Websocket.MATCH_ID, 3, Websocket.TEAM_UPDATE, (err?: string) => {
         expect(err).to.be.equal('Index out of bounds.')
         done()
+      })
+    })
+    it('should error out when setting a team for an invalid match', (done) => {
+      websocket.emit('match:set_team', 'VERY_INVALID_MATCH_ID', 1, Websocket.TEAM_UPDATE, (err?: string) => {
+        console.log(err)
+        expect(err).to.be.equal('Match not found.')
+        done()
+      })
+    })
+  })
+
+  describe('Overlay', () => {
+    before((done) => {
+      if (websocket) websocket.close()
+      websocket = io(`http://localhost:${process.env.PORT}`, {
+        autoConnect: false,
+      })
+      websocket.on('connect', () => {
+        done()
+      })
+      websocket.connect()
+    })
+    beforeEach(() => {
+      websocket.removeAllListeners('game:event')
+    })
+    it('should log in successfully with valid credentials', (done) => {
+      websocket.emit('login', Auth.USER1_TOKEN, 'OVERLAY', (status: string, info: any) => {
+        expect(status).to.be.equal('good')
+        expect(info).to.exist
+        expect(info.name).to.exist
+        expect(info.version).to.exist
+        expect(info.author).to.exist
+        done()
+      })
+    })
+    it('should successfully be assigned to a match', (done) => {
+      websocket.emit('relay:assign', websocket.id, Websocket.MATCH_ID, () => {
+        done()
+      })
+    })
+    it('should receive data for the assigned match', (done) => {
+      websocket.on('game:event', (evData) => {
+        expect(evData).to.exist
+        expect(evData.event).to.be.equal('game:statfeed_event')
+        expect(evData.data).to.be.equal('some_data_here')
+        done()
+      })
+
+      socketServer.io.to(Websocket.MATCH_ID).except('plugin').emit('game:event', {
+        event: 'game:statfeed_event',
+        data: 'some_data_here',
+      })
+    })
+    it('should not receive any data for other matches', (done) => {
+      let complete = false
+      websocket.on('game:event', (evData) => {
+        complete = true
+        done('Unexpected data received.')
+      })
+
+      // Give it 1500ms to check for updates
+      setTimeout(() => {
+        if (!complete) done()
+      }, 1500)
+
+      socketServer.io.to('INVALID_MATCH_ID').except('plugin').emit('game:event', {
+        event: 'game:statfeed_event',
+        data: 'some_data_here',
       })
     })
   })
