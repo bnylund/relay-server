@@ -18,31 +18,31 @@ socket.emit('login', token, 'CONTROLBOARD' /* or */ 'PLUGIN' /* or */ 'OVERLAY',
 
 ### match:get - Gets current match
 ```typescript
-socket.emit('match:get', (match: Match) => {
+socket.emit('match:get', match_id, (match: Match) => {
   // Do stuff here
 })
 ```
 
 ### match:update - Updates the current match
 ```typescript
-socket.emit('match:update', matchData as Partial<Match>)
+socket.emit('match:update', match_id, matchData as Partial<Match>)
 ```
 
 ### match:set_team - Sets either the home team or away team
 ```typescript
-socket.emit('match:set_team', 0 /* or */ 1, teamData as Partial<Team>, (err?: Error) => {
+socket.emit('match:set_team', match_id, 0 /* or */ 1, teamData as Partial<Team>, (err?: Error) => {
   // Do stuff here
 })
 ```
 
 ### match:updated - Fires when the current match gets updated
 ```typescript
-socket.on('match:updated', (match: Match) => {
+socket.on('match:updated', (match_id: string, match: Match) => {
   // Do stuff here
 })
 ```
 
-### match:ended - Fires when the the current match (or series) finishes
+### match:ended - Fires when the the current match (or series) finishes. Only gets sent to those in the same match socketio room.
 ```typescript
 socket.on('match:ended', (match: Match) => {
   // Do stuff here
@@ -51,33 +51,26 @@ socket.on('match:ended', (match: Match) => {
 
 ### match:team_set - Fires when either the home team or away team gets set
 ```typescript
-socket.on('match:team_set', (teamnum: number, match: Match) => {
+socket.on('match:team_set', (match_id: string, teamnum: number, match: Match) => {
   // Do stuff here
 })
 ```
 
 # Game
 
-### game:get - Gets current game
-```typescript
-socket.emit('game:get', (game: Game) => {
-  // Do stuff here
-})
-```
-
-### game:event - Sends a game event in for parsing (PLUGIN ONLY)
+### game:event - Sends a game event in for parsing (PLUGIN ONLY). This gets ignored if the plugin isn't assigned to a match.
 ```typescript
 socket.emit('game:event', event as string)
 ```
 
-### game:event - Fires when a game event is received
+### game:event - Fires when a game event is received. Only gets sent to those in the same match socketio room.
 ```typescript
 socket.on('game:event', (eventData: any) => {
   // Do stuff here
 })
 ```
 
-### game:ended - Fired when a game finishes
+### game:ended - Fired when a game finishes. Only gets sent to those in the same match socketio room.
 ```typescript
 socket.on('game:ended', (match: Match, teamnum: 0 | 1) => {
   // Do stuff here
@@ -100,12 +93,12 @@ socket.emit('overlay:deactivate', email, name)
 
 ### overlay:show_scene - Tells the overlay to show the specified scene
 ```typescript
-socket.emit('overlay:show_scene', data as Partial<Scene>)
+socket.emit('overlay:show_scene', match_id, data as Partial<Scene>)
 ```
 
 ### overlay:hide_scene - Tells the overlay to hide the specified scene
 ```typescript
-socket.emit('overlay:hide_scene', data as Partial<Scene>)
+socket.emit('overlay:hide_scene', match_id, data as Partial<Scene>)
 ```
 
 ### overlay:activated - Fires when an overlay gets activated
@@ -117,7 +110,7 @@ socket.on('overlay:activated', (overlays: { email: string; overlays: { name: str
 
 ### overlay:deactivated - Fires when an overlay gets deactivated
 ```typescript
-socket.on('overlay:deactivated', (email: string; id: string) => {
+socket.on('overlay:deactivated', (id: string) => {
   // Do stuff here
 })
 ```
@@ -133,21 +126,21 @@ socket.on('plugin:activated', (plugins: { email: string; plugins: { name: string
 
 ### plugin:deactivated - Fires when a plugin gets deactivated
 ```typescript
-socket.on('plugin:deactivated', (email: string; id: string) => {
+socket.on('plugin:deactivated', (id: string) => {
   // Do stuff here
 })
 ```
 
 # Scene
 
-### scene:show - Fires when a scene gets shown (OVERLAY ONLY)
+### scene:show - Fires when a scene gets shown (OVERLAY ONLY). Only gets sent to those in the same match socketio room.
 ```typescript
 socket.on('scene:show', (data: Partial<Scene>) => {
   // Do stuff here
 })
 ```
 
-### scene:hide - Fires when a scene gets hidden (OVERLAY ONLY)
+### scene:hide - Fires when a scene gets hidden (OVERLAY ONLY). Only gets sent to those in the same match socketio room.
 ```typescript
 socket.on('scene:hide', (data: Partial<Scene>) => {
   // Do stuff here

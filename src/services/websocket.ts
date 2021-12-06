@@ -73,7 +73,7 @@ export function registerListeners(socket: Socket) {
     const plugin = websocket.plugins.find((x) => x.id === socket.id)
     if (plugin) {
       console.log('Plugin disconnected. (' + plugin.name + ')')
-      websocket.io.to('plugin').to('control').emit('plugin:deactivate', plugin.id)
+      websocket.io.to('plugin').to('control').emit('plugin:deactivated', plugin.id)
       websocket.plugins = websocket.plugins.filter((x) => x.id !== plugin.id)
 
       // Assign new active plugin for match_guid, if applicable
@@ -163,6 +163,9 @@ export function registerPluginListeners(socket: Socket) {
       socket.disconnect(true)
       return
     }
+
+    // If there isn't an associated match, don't do anything
+    if (plugin.match_id === '') return
 
     // We send our own state events, so ignore game:update_state
     if (evData.event !== 'game:update_state')
