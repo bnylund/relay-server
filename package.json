@@ -20,14 +20,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/bnylund/relay-server.git"
+    "url": "git+https://github.com/mn-rocket-league/relay-server.git"
   },
   "author": "Ben Nylund <ben@nylund.us>",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/bnylund/relay-server/issues"
+    "url": "https://github.com/mn-rocket-league/relay-server/issues"
   },
-  "homepage": "https://github.com/bnylund/relay-server#readme",
+  "homepage": "https://github.com/mn-rocket-league/relay-server#readme",
   "devDependencies": {
     "@babel/core": "^7.13.10",
     "@babel/preset-env": "^7.13.10",

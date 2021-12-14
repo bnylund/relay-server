@@ -3,14 +3,18 @@ import { Socket, Server } from 'socket.io'
 import { success } from 'cli-msg'
 import matches, { Base, RocketLeague, updateMatch } from './live'
 
-interface Overlay {
+interface BaseConnection {
   email: string
   name: string
   id: string
-  match_id: string // Assigned match
+  match_id: string
 }
 
-interface Plugin extends Overlay {
+interface Overlay extends BaseConnection {
+  scenes: { name: string; dataFormat: any }[]
+}
+
+interface Plugin extends BaseConnection {
   rate: number
   active: boolean
   ingame_match_guid: string // Used for failover
@@ -56,7 +60,7 @@ export function initialize(http: HTTPServer) {
   success.wb('Socket.IO hooked!')
 }
 
-export function registerListeners(socket: Socket) {
+function registerListeners(socket: Socket) {
   socket.on('disconnect', (reason) => {
     websocket.authenticated = websocket.authenticated.filter((x) => x !== socket.id)
     console.log('Client disconnected. (' + reason + ')')
@@ -116,11 +120,12 @@ export function registerListeners(socket: Socket) {
         const user = { email: 'I_HOPE_THIS_ISNT_PROD@nylund.us ' } // await decodeToken(token)
         if (user) {
           if (type === 'OVERLAY') {
-            websocket.overlays.push({ name, id: socket.id, email: user.email, match_id: '' })
+            websocket.overlays.push({ name, id: socket.id, email: user.email, match_id: '', scenes: [] })
             socket.join('overlay')
             console.log(`Overlay activated! (${name}) [${user.email}]`)
-            websocket.io.to('control').emit('overlay:activated', websocket.overlays)
+            websocket.io.to('control').emit('overlay:activated', socket.id, name, user.email)
             registerTestListeners(socket, 'OVERLAY')
+            registerOverlayListeners(socket)
           } else if (type === 'CONTROLBOARD') {
             socket.join('control')
             registerPrivateListeners(socket)
@@ -134,7 +139,7 @@ export function registerListeners(socket: Socket) {
               match_id: '',
               ingame_match_guid: '',
             })
-            websocket.io.to('control').emit('plugin:activated', websocket.plugins)
+            websocket.io.to('control').emit('plugin:activated', socket.id, name, user.email)
             socket.join('plugin')
             registerPluginListeners(socket)
             registerTestListeners(socket, 'PLUGIN')
@@ -148,7 +153,16 @@ export function registerListeners(socket: Socket) {
   )
 }
 
-export function registerPluginListeners(socket: Socket) {
+function registerOverlayListeners(socket: Socket) {
+  socket.on('scene:register', (name, dataFormat) => {
+    const overlay = websocket.overlays.find((x) => x.id === socket.id)
+    if (!overlay) return
+    overlay.scenes = overlay.scenes.filter((x) => x.name !== name)
+    overlay.scenes.push({ name, dataFormat })
+  })
+}
+
+function registerPluginListeners(socket: Socket) {
   socket.on('heartbeat', (callback: () => void) => {
     callback()
   })
@@ -178,13 +192,11 @@ export function registerPluginListeners(socket: Socket) {
       }, 1000)
     }
 
-    //websocket.io.to('control').emit('plugin:heartbeat')
-
     parseMessage(plugin, evData)
   })
 }
 
-export function registerPrivateListeners(socket: Socket) {
+function registerPrivateListeners(socket: Socket) {
   console.log(`Client logged in! (${socket.id})`)
   socket.on('match:update', (id: string, matchData: Partial<Base.Match>) => {
     const match = updateMatch(id, matchData)
@@ -218,13 +230,13 @@ export function registerPrivateListeners(socket: Socket) {
     cb()
   })
 
-  socket.on('overlay:show_scene', (match_id: string, data: any) => {
-    websocket.io.to(match_id).except('plugin').emit('scene:show', data)
-  })
-
-  socket.on('overlay:hide_scene', (match_id: string, data: any) => {
-    websocket.io.to(match_id).except('plugin').emit('scene:hide', data)
-  })
+  // TODO: Figure out what to do for show_scene and hide_scene data (name, state, transition?)
+  socket.on(
+    'scene:visibility',
+    (match_id: string, data: { name: string; state: boolean; transition: boolean; [key: string]: any }) => {
+      websocket.io.to(match_id).except('plugin').emit('scene:visibility', data)
+    },
+  )
 
   socket.on('overlay:deactivate', (id: string) => {
     const overlay = websocket.overlays.find((x) => x.id === id)
@@ -237,34 +249,64 @@ export function registerPrivateListeners(socket: Socket) {
     cb(websocket.overlays)
   })
 
-  socket.on('relay:assign', (sid: string, type: 'PLUGIN' | 'OVERLAY', match: string, callback: () => void) => {
-    if (socket.id === sid) {
-      if (type === 'PLUGIN') {
-        const plugin = websocket.plugins.find((x) => x.id === socket.id)
-        if (!plugin) return
-        plugin.match_id = match
-      } else if (type === 'OVERLAY') {
-        const overlay = websocket.overlays.find((x) => x.id === socket.id)
-        if (!overlay) return
-        overlay.match_id = match
-      }
-      socket.join(match)
-      callback()
+  socket.on('scene:update_data', (match_id: string, scene_name: string, data: any) => {
+    if (match_id && match_id.length > 0) websocket.io.to(match_id).emit('scene:update_data', scene_name, data)
+  })
+
+  socket.on('plugin:deactivate', (id: string) => {
+    const plugin = websocket.plugins.find((x) => x.id === id)
+    if (plugin && plugin.id === socket.id) {
+      socket.disconnect(true)
     }
   })
+
+  socket.on('plugin:list', (cb: (plugins: Plugin[]) => void) => {
+    cb(websocket.plugins)
+  })
+
+  socket.on(
+    'relay:assign',
+    (sid: string, type: 'PLUGIN' | 'OVERLAY', match: string, callback: (err?: Error) => void) => {
+      if (socket.id === sid) {
+        if (type === 'PLUGIN') {
+          const plugin = websocket.plugins.find((x) => x.id === socket.id)
+          if (!plugin) {
+            callback(new Error('Plugin not found.'))
+            return
+          }
+          plugin.match_id = match
+        } else if (type === 'OVERLAY') {
+          const overlay = websocket.overlays.find((x) => x.id === socket.id)
+          if (!overlay) {
+            callback(new Error('Overlay not found.'))
+            return
+          }
+          overlay.match_id = match
+        }
+        socket.join(match)
+        callback()
+      }
+    },
+  )
 }
 
 function registerTestListeners(socket: Socket, type: 'PLUGIN' | 'OVERLAY') {
   if (process.env.RELAY_ENV === 'test') {
-    socket.on('relay:assign', (sid: string, match: string, callback: () => void) => {
+    socket.on('relay:assign', (sid: string, match: string, callback: (err?: Error) => void) => {
       if (socket.id === sid) {
         if (type === 'PLUGIN') {
           const plugin = websocket.plugins.find((x) => x.id === socket.id)
-          if (!plugin) return
+          if (!plugin) {
+            callback(new Error('Plugin not found.'))
+            return
+          }
           plugin.match_id = match
         } else if (type === 'OVERLAY') {
           const overlay = websocket.overlays.find((x) => x.id === socket.id)
-          if (!overlay) return
+          if (!overlay) {
+            callback(new Error('Overlay not found.'))
+            return
+          }
           overlay.match_id = match
         }
         socket.join(match)
