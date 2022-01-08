@@ -31,17 +31,17 @@ socket.emit('login', token, 'CONTROLBOARD' /* or */ 'PLUGIN' /* or */ 'OVERLAY',
 | scene:update_data   | OVERLAY      | scene_name: string | data: any       |               | Fires when scene data gets updated. Same match room only                 |
 
 ## Relay Commands
-| Command            | Senders      | arg1                                 | arg2                             | arg3                | arg4                            | Description                            |
-|--------------------|--------------|--------------------------------------|----------------------------------|---------------------|---------------------------------|----------------------------------------|
-| match:update       | CONTROLBOARD | match_id: string                     | data: Partial<Match>             |                     |                                 | Updates the current match              |
-| match:set_team     | CONTROLBOARD | match_id: string                     | teamnum: number                  | data: Partial<Team> | callback: (err?: Error) => void | Sets either the home team or away team |
-| overlay:list       | CONTROLBOARD | callback: (list: Overlay[]) => void  |                                  |                     |                                 | Lists all connected overlays           |
-| overlay:deactivate | CONTROLBOARD | id: string                           |                                  |                     |                                 | Deactivates the specified overlay      |
-| plugin:list        | CONTROLBOARD | callback: (list: Plugin[]) => void   |                                  |                     |                                 | Lists all connected plugins            |
-| plugin:deactivate  | CONTROLBOARD | id: string                           |                                  |                     |                                 | Deactivates the specified plugin       |
-| scene:visibility   | CONTROLBOARD | match_id: string                     | data: SceneData                  |                     |                                 | Updates scene visibility               |
-| scene:update_data  | CONTROLBOARD | match_id: string                     | scene_name: string               | data: any           |                                 | Updates scene data                     |
-| relay:assign       | CONTROLBOARD | socket_id: string                    | type: 'PLUGIN' \| 'OVERLAY'      | match_id: string    | callback: (err?: Error) => void | Assigns a plugin/overlay to a match    |
-| game:event         | PLUGIN       | data: string                         |                                  |                     |                                 | Sends a game event for parsing         |
-| match:get          | ALL          | match_id: string                     | callback: (match: Match) => void |                     |                                 | Gets current match by ID               |
-| match:get_all      | ALL          | callback: (matches: Match[]) => void |                                  |                     |                                 | Gets all running matches               |
+| Command            | Senders      | arg1                                 | arg2                             | arg3                            | arg4                            | Description                            |
+|--------------------|--------------|--------------------------------------|----------------------------------|---------------------------------|---------------------------------|----------------------------------------|
+| match:update       | CONTROLBOARD | match_id: string                     | data: Partial<Match>             |                                 |                                 | Updates the current match              |
+| match:set_team     | CONTROLBOARD | match_id: string                     | teamnum: number                  | data: Partial<Team>             | callback: (err?: Error) => void | Sets either the home team or away team |
+| overlay:list       | CONTROLBOARD | callback: (list: Overlay[]) => void  |                                  |                                 |                                 | Lists all connected overlays           |
+| plugin:list        | CONTROLBOARD | callback: (list: Plugin[]) => void   |                                  |                                 |                                 | Lists all connected plugins            |
+| scene:visibility   | CONTROLBOARD | match_id: string                     | data: SceneData                  |                                 |                                 | Updates scene visibility               |
+| scene:update_data  | CONTROLBOARD | match_id: string                     | scene_name: string               | data: any                       |                                 | Updates scene data                     |
+| relay:assign       | CONTROLBOARD | socket_id: string                    | type: 'PLUGIN' \| 'OVERLAY'      | match_id: string                | callback: (err?: Error) => void | Assigns a plugin/overlay to a match    |
+| relay:deactivate   | CONTROLBOARD | id: string                           | type: 'PLUGIN' \| 'OVERLAY       | callback: (err?: Error) => void |                                 | Deactivates the specified client       |
+| game:event         | PLUGIN       | data: string                         |                                  |                                 |                                 | Sends a game event for parsing         |
+| match:get          | ALL          | match_id: string                     | callback: (match: Match) => void |                                 |                                 | Gets current match by ID               |
+| match:get_all      | ALL          | callback: (matches: Match[]) => void |                                  |                                 |                                 | Gets all running matches               |
+| match:list         | ALL          | callback: (matches: string[]) => void|                                  |                                 |                                 | Gets all running match names           |

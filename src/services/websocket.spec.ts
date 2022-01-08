@@ -231,8 +231,8 @@ describe('Websocket', () => {
       })
     })
     it('should successfully be assigned to a match', (done) => {
-      websocket.emit('relay:assign', websocket.id, Websocket.MATCH_ID, () => {
-        done()
+      websocket.emit('relay:assign', websocket.id, Websocket.MATCH_ID, (err?: Error) => {
+        done(err)
       })
     })
     it('should receive data for the assigned match', (done) => {
@@ -263,6 +263,26 @@ describe('Websocket', () => {
       socketServer.io.to('INVALID_MATCH_ID').except('plugin').emit('game:event', {
         event: 'game:statfeed_event',
         data: 'some_data_here',
+      })
+    })
+    it('should not receive any data after being removed from a match', (done) => {
+      websocket.emit('relay:assign', websocket.id, 'Unassigned', (err?: Error) => {
+        expect(err).to.be.undefined
+        let complete = false
+        websocket.on('game:event', (evData) => {
+          complete = true
+          done('Unexpected data received.')
+        })
+
+        // Give it 1500ms to check for updates
+        setTimeout(() => {
+          if (!complete) done()
+        }, 1500)
+
+        socketServer.io.to('INVALID_MATCH_ID').except('plugin').emit('game:event', {
+          event: 'game:statfeed_event',
+          data: 'some_data_here',
+        })
       })
     })
   })

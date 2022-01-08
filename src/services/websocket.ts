@@ -7,6 +7,7 @@ interface BaseConnection {
   email: string
   name: string
   id: string
+  socket: Socket
   match_id: string
 }
 
@@ -36,15 +37,6 @@ const websocket = {
 
 /*
   DO NOT RUN THIS VERSION (THIS GIT COMMIT) ON PROD, ALL TOKENS WILL VALIDATE. LOCAL ONLY UNTIL AUTH IS DONE! (like pretty please, don't run on prod)
-*/
-/*
-
-  TODO:
-    - Multiple named matches running at the same time.
-      = In the control board, we can create a Match with 2 teams, then assign
-        overlays and plugins to the match
-      = By default, overlays won't receive any data until we give it a match
-
 */
 export function initialize(http: HTTPServer) {
   const io = new Server(http, {
@@ -120,7 +112,14 @@ function registerListeners(socket: Socket) {
         const user = { email: 'I_HOPE_THIS_ISNT_PROD@nylund.us ' } // await decodeToken(token)
         if (user) {
           if (type === 'OVERLAY') {
-            websocket.overlays.push({ name, id: socket.id, email: user.email, match_id: '', scenes: [] })
+            websocket.overlays.push({
+              name,
+              id: socket.id,
+              socket,
+              email: user.email,
+              match_id: 'Unassigned',
+              scenes: [],
+            })
             socket.join('overlay')
             console.log(`Overlay activated! (${name}) [${user.email}]`)
             websocket.io.to('control').emit('overlay:activated', socket.id, name, user.email)
@@ -136,7 +135,8 @@ function registerListeners(socket: Socket) {
               email: user.email,
               rate: 0,
               active: false,
-              match_id: '',
+              socket,
+              match_id: 'Unassigned',
               ingame_match_guid: '',
             })
             websocket.io.to('control').emit('plugin:activated', socket.id, name, user.email)
@@ -179,7 +179,7 @@ function registerPluginListeners(socket: Socket) {
     }
 
     // If there isn't an associated match, don't do anything
-    if (plugin.match_id === '') return
+    if (plugin.match_id === 'Unassigned') return
 
     // We send our own state events, so ignore game:update_state
     if (evData.event !== 'game:update_state')
@@ -198,6 +198,23 @@ function registerPluginListeners(socket: Socket) {
 
 function registerPrivateListeners(socket: Socket) {
   console.log(`Client logged in! (${socket.id})`)
+
+  // This is just active, in use matches. Get all matches from stats platform
+  socket.on('match:list', (callback: (matches: string[]) => void) => {
+    const matches = []
+    for (let i = 0; i < websocket.overlays.length; i++) {
+      if (!matches.includes(websocket.overlays[i].match_id)) {
+        matches.push(websocket.overlays[i].match_id)
+      }
+    }
+    for (let i = 0; i < websocket.plugins.length; i++) {
+      if (!matches.includes(websocket.plugins[i].match_id)) {
+        matches.push(websocket.plugins[i].match_id)
+      }
+    }
+    callback(matches)
+  })
+
   socket.on('match:update', (id: string, matchData: Partial<Base.Match>) => {
     const match = updateMatch(id, matchData)
     websocket.io.to('control').emit('match:updated', id, match)
@@ -230,62 +247,71 @@ function registerPrivateListeners(socket: Socket) {
     cb()
   })
 
-  // TODO: Figure out what to do for show_scene and hide_scene data (name, state, transition?)
   socket.on(
     'scene:visibility',
     (match_id: string, data: { name: string; state: boolean; transition: boolean; [key: string]: any }) => {
+      if (match_id === 'Unassigned') return
       websocket.io.to(match_id).except('plugin').emit('scene:visibility', data)
     },
   )
 
-  socket.on('overlay:deactivate', (id: string) => {
-    const overlay = websocket.overlays.find((x) => x.id === id)
-    if (overlay && overlay.id === socket.id) {
-      socket.disconnect(true)
-    }
-  })
-
   socket.on('overlay:list', (cb: (overlays: Overlay[]) => void) => {
     cb(websocket.overlays)
-  })
-
-  socket.on('scene:update_data', (match_id: string, scene_name: string, data: any) => {
-    if (match_id && match_id.length > 0) websocket.io.to(match_id).emit('scene:update_data', scene_name, data)
-  })
-
-  socket.on('plugin:deactivate', (id: string) => {
-    const plugin = websocket.plugins.find((x) => x.id === id)
-    if (plugin && plugin.id === socket.id) {
-      socket.disconnect(true)
-    }
   })
 
   socket.on('plugin:list', (cb: (plugins: Plugin[]) => void) => {
     cb(websocket.plugins)
   })
 
+  socket.on('scene:update_data', (match_id: string, scene_name: string, data: any) => {
+    if (match_id && match_id.length > 0) websocket.io.to(match_id).emit('scene:update_data', scene_name, data)
+  })
+
+  socket.on('relay:deactivate', (id: string, type: 'OVERLAY' | 'PLUGIN', callback: (err?: Error) => void) => {
+    if (type === 'OVERLAY') {
+      const overlay = websocket.overlays.find((x) => x.id === id)
+      if (overlay && overlay.id === socket.id) {
+        socket.disconnect(true)
+        callback()
+        return
+      }
+      callback(new Error('Overlay not found.'))
+    } else {
+      const plugin = websocket.plugins.find((x) => x.id === id)
+      if (plugin && plugin.id === socket.id) {
+        socket.disconnect(true)
+        callback()
+        return
+      }
+      callback(new Error('Plugin not found.'))
+    }
+  })
+
   socket.on(
     'relay:assign',
     (sid: string, type: 'PLUGIN' | 'OVERLAY', match: string, callback: (err?: Error) => void) => {
-      if (socket.id === sid) {
-        if (type === 'PLUGIN') {
-          const plugin = websocket.plugins.find((x) => x.id === socket.id)
-          if (!plugin) {
-            callback(new Error('Plugin not found.'))
-            return
-          }
-          plugin.match_id = match
-        } else if (type === 'OVERLAY') {
-          const overlay = websocket.overlays.find((x) => x.id === socket.id)
-          if (!overlay) {
-            callback(new Error('Overlay not found.'))
-            return
-          }
-          overlay.match_id = match
-        }
-        socket.join(match)
-        callback()
+      if (!match || match === '') {
+        callback(new Error('Invalid match name.'))
+        return
       }
+      if (type === 'PLUGIN') {
+        const plugin = websocket.plugins.find((x) => x.id === sid)
+        if (!plugin) {
+          callback(new Error('Plugin not found.'))
+          return
+        }
+        plugin.match_id = match
+        plugin.socket.join(match)
+      } else if (type === 'OVERLAY') {
+        const overlay = websocket.overlays.find((x) => x.id === sid)
+        if (!overlay) {
+          callback(new Error('Overlay not found.'))
+          return
+        }
+        overlay.match_id = match
+        overlay.socket.join(match)
+      }
+      callback()
     },
   )
 }
@@ -293,25 +319,28 @@ function registerPrivateListeners(socket: Socket) {
 function registerTestListeners(socket: Socket, type: 'PLUGIN' | 'OVERLAY') {
   if (process.env.RELAY_ENV === 'test') {
     socket.on('relay:assign', (sid: string, match: string, callback: (err?: Error) => void) => {
-      if (socket.id === sid) {
-        if (type === 'PLUGIN') {
-          const plugin = websocket.plugins.find((x) => x.id === socket.id)
-          if (!plugin) {
-            callback(new Error('Plugin not found.'))
-            return
-          }
-          plugin.match_id = match
-        } else if (type === 'OVERLAY') {
-          const overlay = websocket.overlays.find((x) => x.id === socket.id)
-          if (!overlay) {
-            callback(new Error('Overlay not found.'))
-            return
-          }
-          overlay.match_id = match
-        }
-        socket.join(match)
-        callback()
+      if (!match || match === '') {
+        callback(new Error('Invalid match name.'))
+        return
       }
+      if (type === 'PLUGIN') {
+        const plugin = websocket.plugins.find((x) => x.id === sid)
+        if (!plugin) {
+          callback(new Error('Plugin not found.'))
+          return
+        }
+        plugin.match_id = match
+        plugin.socket.join(match)
+      } else if (type === 'OVERLAY') {
+        const overlay = websocket.overlays.find((x) => x.id === sid)
+        if (!overlay) {
+          callback(new Error('Overlay not found.'))
+          return
+        }
+        overlay.match_id = match
+        overlay.socket.join(match)
+      }
+      callback()
     })
   }
 }

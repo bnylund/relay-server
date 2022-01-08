@@ -23,7 +23,6 @@
     "url": "git+https://github.com/mn-rocket-league/relay-server.git"
   },
   "author": "Ben Nylund <ben@nylund.us>",
-  "license": "ISC",
   "bugs": {
     "url": "https://github.com/mn-rocket-league/relay-server/issues"
   },
