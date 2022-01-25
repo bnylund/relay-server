@@ -15,7 +15,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [14.x, 15.x]
+        node-version: [16.x]
         # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
 
     steps:
@@ -31,6 +31,3 @@ jobs:
         env:
           PORT: ${{ secrets.PORT }}
           NODE_ENV: local
-          RELAY_ENV: test
-          MONGO_URL: ${{ secrets.MONGO_URL }}
-          JWT_SIGNING_KEY: ${{ secrets.JWT_SIGNING_KEY }}

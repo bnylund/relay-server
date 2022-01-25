@@ -1,8 +1,9 @@
 import { io, Socket } from 'socket.io-client'
-import matches, { Base, RocketLeague } from './live'
 import { expect } from 'chai'
+
 import { Auth, Websocket } from '../tests/constants'
-import socketServer from './websocket'
+import { websocket as wsService } from '../services/http'
+import matches, { Base } from './live'
 
 let websocket: Socket
 
@@ -243,7 +244,7 @@ describe('Websocket', () => {
         done()
       })
 
-      socketServer.io.to(Websocket.MATCH_ID).except('plugin').emit('game:event', {
+      wsService.io.to(Websocket.MATCH_ID).except('plugin').emit('game:event', {
         event: 'game:statfeed_event',
         data: 'some_data_here',
       })
@@ -260,7 +261,7 @@ describe('Websocket', () => {
         if (!complete) done()
       }, 1500)
 
-      socketServer.io.to('INVALID_MATCH_ID').except('plugin').emit('game:event', {
+      wsService.io.to('INVALID_MATCH_ID').except('plugin').emit('game:event', {
         event: 'game:statfeed_event',
         data: 'some_data_here',
       })
@@ -279,7 +280,7 @@ describe('Websocket', () => {
           if (!complete) done()
         }, 1500)
 
-        socketServer.io.to('INVALID_MATCH_ID').except('plugin').emit('game:event', {
+        wsService.io.to('INVALID_MATCH_ID').except('plugin').emit('game:event', {
           event: 'game:statfeed_event',
           data: 'some_data_here',
         })
