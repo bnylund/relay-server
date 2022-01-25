@@ -1,14 +1,17 @@
 import { Server as HTTPServer } from 'http'
 import { Socket, Server } from 'socket.io'
 import { success } from 'cli-msg'
+import { Express } from 'express'
 import matches, { Base, RocketLeague, updateMatch } from './live'
+import pug from 'pug'
 
 interface BaseConnection {
   email: string
   name: string
   id: string
   socket: Socket
-  match_id: string
+  group_id: string
+  type: 'OVERLAY' | 'PLUGIN'
 }
 
 interface Overlay extends BaseConnection {
@@ -23,22 +26,20 @@ interface Plugin extends BaseConnection {
 
 export interface Websocket {
   authenticated: string[]
-  overlays: Overlay[]
-  plugins: Plugin[]
+  connections: any[]
   io: Server
 }
 
 const websocket = {
   authenticated: [],
-  overlays: [],
-  plugins: [],
+  connections: [],
   io: undefined,
 } as Websocket
 
 /*
   DO NOT RUN THIS VERSION (THIS GIT COMMIT) ON PROD, ALL TOKENS WILL VALIDATE. LOCAL ONLY UNTIL AUTH IS DONE! (like pretty please, don't run on prod)
 */
-export function initialize(http: HTTPServer) {
+export function initialize(http: HTTPServer, app: Express) {
   const io = new Server(http, {
     pingTimeout: 3000,
     pingInterval: 1500,
@@ -46,36 +47,33 @@ export function initialize(http: HTTPServer) {
   io.on('connection', async (socket: Socket) => {
     let sockets = await io.of('/').adapter.sockets(new Set())
     console.log('Client connected! (' + sockets.size + ')')
-    registerListeners(socket)
+    registerListeners(socket, app)
   })
   websocket.io = io
+
   success.wb('Socket.IO hooked!')
 }
 
-function registerListeners(socket: Socket) {
+function registerListeners(socket: Socket, app: Express) {
   socket.on('disconnect', (reason) => {
     websocket.authenticated = websocket.authenticated.filter((x) => x !== socket.id)
     console.log('Client disconnected. (' + reason + ')')
 
     // Update overlay list
-    const overlay = websocket.overlays.find((x) => x.id === socket.id)
-    if (overlay) {
-      console.log('Overlay disconnected. (' + overlay.name + ')')
-      websocket.io.to('overlay').to('control').emit('overlay:deactivated', overlay.id)
-      websocket.overlays = websocket.overlays.filter((x) => x.id !== overlay.id)
-    }
+    let con = websocket.connections.find((x) => x.id === socket.id)
+    if (con) {
+      console.log(`${con.type === 'OVERLAY' ? 'Overlay' : 'Plugin'} disconnected. (${con.id})`)
+      websocket.io.to('control').emit(`${con.type.toLowerCase()}:deactivated`, con.id)
+      websocket.connections = websocket.connections.filter((x) => x.id !== con.id)
 
-    // Update plugin list
-    const plugin = websocket.plugins.find((x) => x.id === socket.id)
-    if (plugin) {
-      console.log('Plugin disconnected. (' + plugin.name + ')')
-      websocket.io.to('plugin').to('control').emit('plugin:deactivated', plugin.id)
-      websocket.plugins = websocket.plugins.filter((x) => x.id !== plugin.id)
-
-      // Assign new active plugin for match_guid, if applicable
-      const newPlugin = websocket.plugins.find((x) => x.ingame_match_guid === plugin.ingame_match_guid)
-      if (newPlugin && plugin.active && plugin.match_id === newPlugin.match_id) {
-        newPlugin.active = true
+      if (con.type === 'PLUGIN') {
+        const plugin = con as Plugin
+        const newPlugin = <Plugin>(
+          websocket.connections.find((x: any) => x.ingame_match_guid === plugin.ingame_match_guid)
+        )
+        if (newPlugin && plugin.active && plugin.group_id === newPlugin.group_id) {
+          newPlugin.active = true
+        }
       }
     }
   })
@@ -88,9 +86,17 @@ function registerListeners(socket: Socket) {
     callback(matches)
   })
 
-  // Auth through website instead?
-  // like imagine, plugin opens up default browser (w/ socket id), and web browser handles auth (email, pass, plugin display name, etc)
-  // 😳👉👈 much cool
+  app.get(`/login/${socket.id}`, (req, res) => {
+    res.send(pug.compileFile(`${__dirname}/../pages/login.pug`)({ socket_id: socket.id }))
+  })
+
+  app.post(`/login/${socket.id}`, (req, res) => {
+    const { email, password, type } = req.body
+    /* Send a POST /login to broadcast-backend. If successful, continue with adding
+       the current socket to the authenticated list, then register listeners.
+    */
+  })
+
   socket.on(
     'login',
     async (
@@ -106,43 +112,43 @@ function registerListeners(socket: Socket) {
 
       let name = 'tmp_name'
 
-      // Overlay, Controlboard, and Plugin will all use HTTP api to get a token using email/pass.
-      // Token will be the same JWT
       try {
         const user = { email: 'I_HOPE_THIS_ISNT_PROD@nylund.us ' } // await decodeToken(token)
         if (user) {
           if (type === 'OVERLAY') {
-            websocket.overlays.push({
+            websocket.connections.push({
               name,
               id: socket.id,
               socket,
               email: user.email,
-              match_id: 'Unassigned',
+              group_id: 'Unassigned',
               scenes: [],
+              type: 'OVERLAY',
             })
             socket.join('overlay')
             console.log(`Overlay activated! (${name}) [${user.email}]`)
             websocket.io.to('control').emit('overlay:activated', socket.id, name, user.email)
-            registerTestListeners(socket, 'OVERLAY')
+            registerTestListeners(socket)
             registerOverlayListeners(socket)
           } else if (type === 'CONTROLBOARD') {
             socket.join('control')
             registerPrivateListeners(socket)
           } else if (type === 'PLUGIN') {
-            websocket.plugins.push({
+            websocket.connections.push({
               name,
               id: socket.id,
               email: user.email,
               rate: 0,
               active: false,
               socket,
-              match_id: 'Unassigned',
+              group_id: 'Unassigned',
               ingame_match_guid: '',
+              type: 'PLUGIN',
             })
             websocket.io.to('control').emit('plugin:activated', socket.id, name, user.email)
             socket.join('plugin')
             registerPluginListeners(socket)
-            registerTestListeners(socket, 'PLUGIN')
+            registerTestListeners(socket)
           }
           callback('good', inf)
           return
@@ -155,7 +161,7 @@ function registerListeners(socket: Socket) {
 
 function registerOverlayListeners(socket: Socket) {
   socket.on('scene:register', (name, dataFormat) => {
-    const overlay = websocket.overlays.find((x) => x.id === socket.id)
+    const overlay = websocket.connections.find((x) => x.id === socket.id)
     if (!overlay) return
     overlay.scenes = overlay.scenes.filter((x) => x.name !== name)
     overlay.scenes.push({ name, dataFormat })
@@ -171,7 +177,7 @@ function registerPluginListeners(socket: Socket) {
     // incoming json game events from socketio-cpp are in string form
     let evData = JSON.parse(ev)
 
-    const plugin = websocket.plugins.find((x) => x.id === socket.id)
+    const plugin = websocket.connections.find((x) => x.id === socket.id)
     if (!plugin) {
       // This should never happen, so clean up
       socket.disconnect(true)
@@ -179,13 +185,13 @@ function registerPluginListeners(socket: Socket) {
     }
 
     // If there isn't an associated match, don't do anything
-    if (plugin.match_id === 'Unassigned') return
+    if (plugin.group_id === 'Unassigned') return
 
     // We send our own state events, so ignore game:update_state
     if (evData.event !== 'game:update_state')
-      websocket.io.to(plugin.match_id).except('plugin').emit('game:event', evData)
+      websocket.io.to(plugin.group_id).except('plugin').emit('game:event', evData)
     else {
-      const plugin = websocket.plugins.find((x) => x.id === socket.id)
+      const plugin = websocket.connections.find((x) => x.id === socket.id)
       plugin.rate++
       setTimeout(() => {
         if (plugin) plugin.rate--
@@ -199,20 +205,14 @@ function registerPluginListeners(socket: Socket) {
 function registerPrivateListeners(socket: Socket) {
   console.log(`Client logged in! (${socket.id})`)
 
-  // This is just active, in use matches. Get all matches from stats platform
-  socket.on('match:list', (callback: (matches: string[]) => void) => {
-    const matches = []
-    for (let i = 0; i < websocket.overlays.length; i++) {
-      if (!matches.includes(websocket.overlays[i].match_id)) {
-        matches.push(websocket.overlays[i].match_id)
+  socket.on('groups:list', (callback: (groups: string[]) => void) => {
+    const groups = []
+    for (let i = 0; i < websocket.connections.length; i++) {
+      if (!groups.includes(websocket.connections[i].group_id)) {
+        groups.push(websocket.connections[i].group_id)
       }
     }
-    for (let i = 0; i < websocket.plugins.length; i++) {
-      if (!matches.includes(websocket.plugins[i].match_id)) {
-        matches.push(websocket.plugins[i].match_id)
-      }
-    }
-    callback(matches)
+    callback(groups)
   })
 
   socket.on('match:update', (id: string, matchData: Partial<Base.Match>) => {
@@ -255,91 +255,54 @@ function registerPrivateListeners(socket: Socket) {
     },
   )
 
-  socket.on('overlay:list', (cb: (overlays: Overlay[]) => void) => {
-    cb(websocket.overlays)
-  })
-
-  socket.on('plugin:list', (cb: (plugins: Plugin[]) => void) => {
-    cb(websocket.plugins)
+  socket.on('connection:list', (cb: (connections: any[]) => void) => {
+    cb(websocket.connections)
   })
 
   socket.on('scene:update_data', (match_id: string, scene_name: string, data: any) => {
     if (match_id && match_id.length > 0) websocket.io.to(match_id).emit('scene:update_data', scene_name, data)
   })
 
-  socket.on('relay:deactivate', (id: string, type: 'OVERLAY' | 'PLUGIN', callback: (err?: Error) => void) => {
-    if (type === 'OVERLAY') {
-      const overlay = websocket.overlays.find((x) => x.id === id)
-      if (overlay && overlay.id === socket.id) {
-        socket.disconnect(true)
-        callback()
-        return
-      }
-      callback(new Error('Overlay not found.'))
-    } else {
-      const plugin = websocket.plugins.find((x) => x.id === id)
-      if (plugin && plugin.id === socket.id) {
-        socket.disconnect(true)
-        callback()
-        return
-      }
-      callback(new Error('Plugin not found.'))
+  socket.on('relay:deactivate', (id: string, callback: (err?: Error) => void) => {
+    const connection = websocket.connections.find((x) => x.id === id)
+    if (connection && connection.id === socket.id) {
+      socket.disconnect(true)
+      callback()
+      return
     }
+    callback(new Error('SocketID not found.'))
   })
 
-  socket.on(
-    'relay:assign',
-    (sid: string, type: 'PLUGIN' | 'OVERLAY', match: string, callback: (err?: Error) => void) => {
-      if (!match || match === '') {
-        callback(new Error('Invalid match name.'))
-        return
-      }
-      if (type === 'PLUGIN') {
-        const plugin = websocket.plugins.find((x) => x.id === sid)
-        if (!plugin) {
-          callback(new Error('Plugin not found.'))
-          return
-        }
-        plugin.match_id = match
-        plugin.socket.join(match)
-      } else if (type === 'OVERLAY') {
-        const overlay = websocket.overlays.find((x) => x.id === sid)
-        if (!overlay) {
-          callback(new Error('Overlay not found.'))
-          return
-        }
-        overlay.match_id = match
-        overlay.socket.join(match)
-      }
-      callback()
-    },
-  )
+  socket.on('relay:assign', (sid: string, match: string, callback: (err?: Error) => void) => {
+    if (!match || match === '') {
+      callback(new Error('Invalid match name.'))
+      return
+    }
+    const connection = websocket.connections.find((x) => x.id === sid)
+    if (!connection) {
+      callback(new Error('SocketID not found.'))
+      return
+    }
+    connection.group_id = match
+    connection.socket.join(match)
+    callback()
+  })
 }
 
-function registerTestListeners(socket: Socket, type: 'PLUGIN' | 'OVERLAY') {
+function registerTestListeners(socket: Socket) {
   if (process.env.RELAY_ENV === 'test') {
     socket.on('relay:assign', (sid: string, match: string, callback: (err?: Error) => void) => {
       if (!match || match === '') {
         callback(new Error('Invalid match name.'))
         return
       }
-      if (type === 'PLUGIN') {
-        const plugin = websocket.plugins.find((x) => x.id === sid)
-        if (!plugin) {
-          callback(new Error('Plugin not found.'))
-          return
-        }
-        plugin.match_id = match
-        plugin.socket.join(match)
-      } else if (type === 'OVERLAY') {
-        const overlay = websocket.overlays.find((x) => x.id === sid)
-        if (!overlay) {
-          callback(new Error('Overlay not found.'))
-          return
-        }
-        overlay.match_id = match
-        overlay.socket.join(match)
+      const connection = websocket.connections.find((x) => x.id === sid)
+      if (!connection) {
+        callback(new Error('SocketID not found.'))
+        return
       }
+      connection.group_id = match
+      connection.socket.join(match)
       callback()
     })
   }
@@ -347,12 +310,12 @@ function registerTestListeners(socket: Socket, type: 'PLUGIN' | 'OVERLAY') {
 
 function parseMessage(plugin: Plugin, json: { game: string; event: string; data: any }) {
   if (!json.event) return
-  const match = matches.find((x) => x.id === plugin.match_id)
+  const match = matches.find((x) => x.id === plugin.group_id)
   if (!match) return
 
   if (json.event === 'game:update_state') {
     let data = json.data
-    if (websocket.plugins.filter((x) => x.ingame_match_guid === data.match_guid).length === 0) {
+    if (websocket.connections.filter((x) => x.ingame_match_guid === data.match_guid).length === 0) {
       plugin.active = true
     }
     plugin.ingame_match_guid = data.match_guid
@@ -383,7 +346,7 @@ function parseMessage(plugin: Plugin, json: { game: string; event: string; data:
     match.game = g
 
     // Send out update_state to keep in sync with plugin update_state
-    websocket.io.to(plugin.match_id).except('plugin').emit('match:update_state', match)
+    websocket.io.to(plugin.group_id).except('plugin').emit('match:update_state', match)
   } else if (json.event === 'game:match_ended') {
     if (!plugin.active) return
     let g = match.game ?? ({} as Base.Game)
@@ -403,9 +366,9 @@ function parseMessage(plugin: Plugin, json: { game: string; event: string; data:
 
     if (match.hasWinner) {
       // Pass the entire match in the game ended
-      websocket.io.to(plugin.match_id).except('plugin').emit('game:ended', match, winning_team)
-      websocket.io.to(plugin.match_id).except('plugin').emit('match:ended', match)
-    } else websocket.io.to(plugin.match_id).except('plugin').emit('game:ended', match, winning_team)
+      websocket.io.to(plugin.group_id).except('plugin').emit('game:ended', match, winning_team)
+      websocket.io.to(plugin.group_id).except('plugin').emit('match:ended', match)
+    } else websocket.io.to(plugin.group_id).except('plugin').emit('game:ended', match, winning_team)
   } else if (json.event === 'game:match_destroyed') {
     if (!plugin.active) return
     delete match.game
