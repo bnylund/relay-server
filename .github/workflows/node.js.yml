@@ -31,3 +31,4 @@ jobs:
         env:
           PORT: ${{ secrets.PORT }}
           NODE_ENV: local
+          RELAY_ENV: test
