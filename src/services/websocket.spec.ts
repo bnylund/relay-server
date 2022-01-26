@@ -1,3 +1,4 @@
+process.env.RELAY_ENV = 'test'
 import { io, Socket } from 'socket.io-client'
 import { expect } from 'chai'
 

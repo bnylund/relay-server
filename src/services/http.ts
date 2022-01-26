@@ -34,7 +34,7 @@ export const httpServer = http.createServer(app).listen(PORT, () => {
   app.emit('listening')
 })
 
-export const httpsServer = https.createServer(app).listen(process.env.NODE_ENV === 'test' ? 9999 : 443, () => {
+export const httpsServer = https.createServer(app).listen(process.env.RELAY_ENV === 'test' ? 9999 : 443, () => {
   success.wb(`HTTPS Server started on port 443`)
 })
 
