@@ -71,12 +71,7 @@ describe('Websocket', () => {
       websocket.removeAllListeners('game:match_destroyed')
     })
     it('should log in successfully with valid credentials', (done) => {
-      websocket.emit('login', Auth.USER1_TOKEN, 'PLUGIN', (status: string, info: any) => {
-        expect(status).to.be.equal('good')
-        expect(info).to.exist
-        expect(info.name).to.exist
-        expect(info.version).to.exist
-        expect(info.author).to.exist
+      websocket.emit('login', 'PLUGIN', () => {
         done()
       })
     })
@@ -150,12 +145,7 @@ describe('Websocket', () => {
       websocket.removeAllListeners('match:team_set')
     })
     it('should log in successfully with valid credentials', (done) => {
-      websocket.emit('login', Auth.USER1_TOKEN, 'CONTROLBOARD', (status: string, info: any) => {
-        expect(status).to.be.equal('good')
-        expect(info).to.exist
-        expect(info.name).to.exist
-        expect(info.version).to.exist
-        expect(info.author).to.exist
+      websocket.emit('login', 'CONTROLBOARD', () => {
         done()
       })
     })
@@ -223,12 +213,7 @@ describe('Websocket', () => {
       websocket.removeAllListeners('game:event')
     })
     it('should log in successfully with valid credentials', (done) => {
-      websocket.emit('login', Auth.USER1_TOKEN, 'OVERLAY', (status: string, info: any) => {
-        expect(status).to.be.equal('good')
-        expect(info).to.exist
-        expect(info.name).to.exist
-        expect(info.version).to.exist
-        expect(info.author).to.exist
+      websocket.emit('login', 'OVERLAY', () => {
         done()
       })
     })

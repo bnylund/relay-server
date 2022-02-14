@@ -7,6 +7,7 @@ import { success } from 'cli-msg'
 import pug from 'pug'
 
 import matches, { Base, RocketLeague, updateMatch } from './live'
+import axios from 'axios'
 
 interface BaseConnection {
   email: string
@@ -88,72 +89,59 @@ export class WebsocketService {
     })
 
     this.app.post(`/login/${socket.id}`, (req, res) => {
-      const { email, password, type } = req.body
+      const { email, password, name, type } = req.body
       /* Send a POST /login to broadcast-backend. If successful, continue with adding
          the current socket to the authenticated list, then register listeners.
       */
+      if (type !== 'CONTROLBOARD' && type !== 'OVERLAY' && type !== 'PLUGIN')
+        return res.status(400).send({ error: 'Invalid type.' })
+
+      return axios({
+        url: [process.env.BACKEND_URL, 'login'].join('/'),
+        data: { email, password },
+      })
+        .then((val) => {
+          if (type === 'CONTROLBOARD') {
+            socket.join('control')
+            this.registerCB(socket)
+          } else if (type === 'PLUGIN') {
+            this.connections.push({
+              name,
+              email,
+              id: socket.id,
+              rate: 0,
+              active: false,
+              socket,
+              group_id: 'Unassigned',
+              ingame_match_guid: '',
+              type: 'PLUGIN',
+            })
+            this.io.to('control').emit('plugin:activated', socket.id, name, email)
+            socket.join('plugin')
+            this.registerPlugin(socket)
+          } else {
+            this.connections.push({
+              name,
+              email,
+              socket,
+              id: socket.id,
+              group_id: 'Unassigned',
+              scenes: [],
+              type: 'OVERLAY',
+            })
+            socket.join('overlay')
+            console.log(`Overlay activated! (${name}) [${email}]`)
+            this.io.to('control').emit('overlay:activated', socket.id, name, email)
+            this.registerOverlay(socket)
+          }
+          return res.status(200).send({ message: 'Socket logged in.' })
+        })
+        .catch((err) => {
+          return res.status(500).send(err)
+        })
     })
 
-    socket.on(
-      'login',
-      async (
-        token: string,
-        type: 'CONTROLBOARD' | 'PLUGIN' | 'OVERLAY',
-        callback: (status: string, info: { name: string; version: string; author: string }) => void,
-      ) => {
-        const inf = {
-          name: require('../../package.json').name,
-          version: require('../../package.json').version,
-          author: require('../../package.json').author,
-        }
-
-        let name = 'tmp_name'
-
-        try {
-          const user = { email: 'I_HOPE_THIS_ISNT_PROD@nylund.us ' } // await decodeToken(token)
-          if (user) {
-            if (type === 'OVERLAY') {
-              this.connections.push({
-                name,
-                id: socket.id,
-                socket,
-                email: user.email,
-                group_id: 'Unassigned',
-                scenes: [],
-                type: 'OVERLAY',
-              })
-              socket.join('overlay')
-              console.log(`Overlay activated! (${name}) [${user.email}]`)
-              this.io.to('control').emit('overlay:activated', socket.id, name, user.email)
-              this.registerTestListeners(socket)
-              this.registerOverlay(socket)
-            } else if (type === 'CONTROLBOARD') {
-              socket.join('control')
-              this.registerCB(socket)
-            } else if (type === 'PLUGIN') {
-              this.connections.push({
-                name,
-                id: socket.id,
-                email: user.email,
-                rate: 0,
-                active: false,
-                socket,
-                group_id: 'Unassigned',
-                ingame_match_guid: '',
-                type: 'PLUGIN',
-              })
-              this.io.to('control').emit('plugin:activated', socket.id, name, user.email)
-              socket.join('plugin')
-              this.registerPlugin(socket)
-              this.registerTestListeners(socket)
-            }
-            callback('good', inf)
-            return
-          }
-        } catch (ex) {}
-        callback('fail', inf)
-      },
-    )
+    this.registerTestListeners(socket)
   }
 
   registerOverlay = (socket: Socket) => {
@@ -286,7 +274,7 @@ export class WebsocketService {
   }
 
   registerTestListeners = (socket: Socket) => {
-    if (process.env.RELAY_ENV === 'test') {
+    if (process.env.NODE_ENV === 'test') {
       socket.on('relay:assign', (sid: string, match: string, callback: (err?: Error) => void) => {
         if (!match || match === '') {
           callback(new Error('Invalid match name.'))
@@ -301,9 +289,48 @@ export class WebsocketService {
         connection.socket.join(match)
         callback()
       })
+
+      socket.on('login', (type: string, callback: () => void) => {
+        if (type === 'CONTROLBOARD') {
+          socket.join('control')
+          this.registerCB(socket)
+        } else if (type === 'PLUGIN') {
+          this.connections.push({
+            name: 'TEST-RELAY',
+            email: 'TEST-RELAY@nylund.us',
+            id: socket.id,
+            rate: 0,
+            active: false,
+            socket,
+            group_id: 'Unassigned',
+            ingame_match_guid: '',
+            type: 'PLUGIN',
+          })
+          this.io.to('control').emit('plugin:activated', socket.id, 'TEST-RELAY', 'TEST-RELAY@nylund.us')
+          socket.join('plugin')
+          this.registerPlugin(socket)
+        } else {
+          this.connections.push({
+            name: 'TEST-RELAY',
+            email: 'TEST-RELAY@nylund.us',
+            socket,
+            id: socket.id,
+            group_id: 'Unassigned',
+            scenes: [],
+            type: 'OVERLAY',
+          })
+          socket.join('overlay')
+          console.log(`Overlay activated! (${'TEST-RELAY'}) [${'TEST-RELAY@nylund.us'}]`)
+          this.io.to('control').emit('overlay:activated', socket.id, 'TEST-RELAY', 'TEST-RELAY@nylund.us')
+          this.registerOverlay(socket)
+        }
+
+        callback()
+      })
     }
   }
 
+  // TODO: Maybe add external, modular parsers that do things when other things happen?
   parseMessage = (plugin: Plugin, json: { game: string; event: string; data: any }) => {
     if (!json.event) return
     const match = matches.find((x) => x.id === plugin.group_id)
@@ -370,7 +397,7 @@ export class WebsocketService {
       delete match.game
     }
 
-    if (process.env.RELAY_ENV === 'test') {
+    if (process.env.NODE_ENV === 'test') {
       this.io.emit(json.event)
     }
   }

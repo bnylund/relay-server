@@ -4,7 +4,16 @@
 
 Here you will find the source code used to provide game data to clients. For data transportation it uses [socket.io 4.x](https://socket.io/docs/v4/).
 
-## Logging in
+## Environment
+
+```
+NODE_ENV=""     # Relay environment         (optional, default: "production", values: "development" | "production")
+PORT=""         # HTTP Port                 (optional, default: 80)
+HTTPS_PORT=""   # HTTPS Port                (optional, default: 443)
+BACKEND_URL=""  # Backend URL               (required)
+```
+
+## Logging in (outdated)
 
 To get access to all required functions in the socket server, you must first log in. You can do this by sending a login event after connecting:
 

@@ -12,6 +12,11 @@ if (!process.env.NODE_ENV) {
   process.env.NODE_ENV = 'production'
 }
 
+if (!process.env.BACKEND_URL) {
+  console.error('No backend URL specified, terminating relay.')
+  process.exit(1)
+}
+
 const app: Express = express()
 app.use(json({ limit: '10mb' }), (err, req, res, next) => {
   if (err) {
@@ -27,6 +32,10 @@ app.use((err, req, res, next) => {
   }
 })
 
+app.get('/', (req, res) => {
+  return res.status(200).send({})
+})
+
 const PORT = Number(process.env.PORT) || 80
 export const httpServer = http.createServer(app).listen(PORT, () => {
   success.wb(`HTTP Server started on port ${PORT}`)
@@ -34,8 +43,9 @@ export const httpServer = http.createServer(app).listen(PORT, () => {
   app.emit('listening')
 })
 
-export const httpsServer = https.createServer(app).listen(process.env.RELAY_ENV === 'test' ? 9999 : 443, () => {
-  success.wb(`HTTPS Server started on port 443`)
+const HTTPS_PORT = Number(process.env.HTTPS_PORT) || 443
+export const httpsServer = https.createServer(app).listen(HTTPS_PORT, () => {
+  success.wb(`HTTPS Server started on port ${HTTPS_PORT}`)
 })
 
 export const websocket = new WebsocketService(app)
