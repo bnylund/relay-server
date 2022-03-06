@@ -18,6 +18,7 @@ export namespace Base {
     teams: Base.Team[]
     winner: number
     hasWinner: boolean
+    match_guid: string
     [key: string]: any
   }
 
@@ -42,14 +43,12 @@ export namespace Base {
     teamSize: number
     hasWinner: boolean
     winner: number
-    id: string
-    stats_id: string // Send assigned match _id from stats platform so we can grab additional information about the match
     [key: string]: any
   }
 
   export interface Colors {
-    primary_color: string
-    secondary_color: string
+    primary: string
+    secondary: string
   }
 }
 

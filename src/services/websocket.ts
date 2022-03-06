@@ -3,11 +3,11 @@ import { Server as HTTPSServer } from 'https'
 import { Server as HTTPServer } from 'http'
 import { AddressInfo } from 'net'
 import { Express } from 'express'
-import { success } from 'cli-msg'
 import pug from 'pug'
 
 import matches, { Base, RocketLeague, updateMatch } from './live'
 import axios from 'axios'
+import Logger from 'js-logger'
 
 interface BaseConnection {
   email: string
@@ -15,7 +15,7 @@ interface BaseConnection {
   id: string
   socket: Socket
   group_id: string
-  type: 'OVERLAY' | 'PLUGIN'
+  type: 'OVERLAY' | 'PLUGIN' | 'CONTROLBOARD'
 }
 
 interface Overlay extends BaseConnection {
@@ -28,19 +28,16 @@ interface Plugin extends BaseConnection {
   ingame_match_guid: string // Used for failover
 }
 
-/*
-  DO NOT RUN THIS COMMIT ON PROD! ALL TOKENS WILL VALIDATE
-*/
+// TODO: Logger, (opt) Modular event handlers
 export class WebsocketService {
   io: Server
   private connections: any[] = []
-  private authenticated: any[] = []
 
   constructor(private app: Express) {}
 
   attach = (srv: HTTPServer | HTTPSServer, opts?: Partial<ServerOptions>) => {
     srv.once('listening', () => {
-      success.wb(`Attached Socket.IO to port ${(<AddressInfo>srv.address()).port}`)
+      Logger.info(`Attached Socket.IO to port ${(<AddressInfo>srv.address()).port}`)
     })
     if (this.io) {
       this.io.attach(srv, opts)
@@ -48,7 +45,7 @@ export class WebsocketService {
       this.io = new Server(srv, { pingTimeout: 3000, pingInterval: 1500, ...opts })
       this.io.on('connection', async (socket: Socket) => {
         let sockets = await this.io.of('/').adapter.sockets(new Set())
-        console.log('Client connected! (' + sockets.size + ')')
+        Logger.info(`Client connected! (${socket.id}, ${sockets.size} sockets connected)`)
         this.registerListeners(socket)
       })
     }
@@ -56,13 +53,12 @@ export class WebsocketService {
 
   registerListeners = (socket: Socket) => {
     socket.on('disconnect', (reason) => {
-      this.authenticated = this.authenticated.filter((x) => x !== socket.id)
-      console.log('Client disconnected. (' + reason + ')')
+      Logger.info(`Client disconnected. (${socket.id}, ${reason})`)
 
       // Update overlay list
       let con = this.connections.find((x) => x.id === socket.id)
       if (con) {
-        console.log(`${con.type === 'OVERLAY' ? 'Overlay' : 'Plugin'} disconnected. (${con.id})`)
+        Logger.info(`${con.type === 'OVERLAY' ? 'Overlay' : 'Plugin'} disconnected. (${con.id})`)
         this.io.to('control').emit(`${con.type.toLowerCase()}:deactivated`, con.id)
         this.connections = this.connections.filter((x) => x.id !== con.id)
 
@@ -84,61 +80,71 @@ export class WebsocketService {
       callback(matches)
     })
 
-    this.app.get(`/login/${socket.id}`, (req, res) => {
-      res.send(pug.compileFile(`${__dirname}/../pages/login.pug`)({ socket_id: socket.id }))
-    })
-
-    this.app.post(`/login/${socket.id}`, (req, res) => {
-      const { email, password, name, type } = req.body
-      /* Send a POST /login to broadcast-backend. If successful, continue with adding
-         the current socket to the authenticated list, then register listeners.
-      */
-      if (type !== 'CONTROLBOARD' && type !== 'OVERLAY' && type !== 'PLUGIN')
-        return res.status(400).send({ error: 'Invalid type.' })
-
-      return axios({
-        url: [process.env.BACKEND_URL, 'login'].join('/'),
-        data: { email, password },
+    socket.on('login', (type: 'OVERLAY' | 'PLUGIN' | 'CONTROLBOARD', callback: (path: string) => void) => {
+      Logger.info(`Creating endpoints for ${socket.id} - ${type}`)
+      this.app.get(`/login/${socket.id}`, (req, res) => {
+        if (this.connections.find((x) => x.id === socket.id)) res.send({ error: 'Already logged in.' })
+        else res.send(pug.compileFile(`${__dirname}/../pages/login.pug`)({ socket_id: socket.id, type }))
       })
-        .then((val) => {
-          if (type === 'CONTROLBOARD') {
-            socket.join('control')
-            this.registerCB(socket)
-          } else if (type === 'PLUGIN') {
-            this.connections.push({
-              name,
-              email,
-              id: socket.id,
-              rate: 0,
-              active: false,
-              socket,
-              group_id: 'Unassigned',
-              ingame_match_guid: '',
-              type: 'PLUGIN',
-            })
-            this.io.to('control').emit('plugin:activated', socket.id, name, email)
-            socket.join('plugin')
-            this.registerPlugin(socket)
-          } else {
-            this.connections.push({
-              name,
-              email,
-              socket,
-              id: socket.id,
-              group_id: 'Unassigned',
-              scenes: [],
-              type: 'OVERLAY',
-            })
-            socket.join('overlay')
-            console.log(`Overlay activated! (${name}) [${email}]`)
-            this.io.to('control').emit('overlay:activated', socket.id, name, email)
-            this.registerOverlay(socket)
-          }
-          return res.status(200).send({ message: 'Socket logged in.' })
+
+      this.app.post(`/login/${socket.id}`, (req, res) => {
+        const { email, password, name, type } = req.body
+
+        if (type !== 'CONTROLBOARD' && type !== 'OVERLAY' && type !== 'PLUGIN')
+          return res.status(400).send({ error: 'Invalid type.' })
+
+        if (this.connections.find((x) => x.id === socket.id)) return res.send({ error: 'Already logged in.' })
+
+        return axios({
+          url: [process.env.BACKEND_URL, 'api', 'v1', 'login'].join('/'),
+          data: { email, password },
+          method: 'POST',
         })
-        .catch((err) => {
-          return res.status(500).send(err)
-        })
+          .then((val) => {
+            if (type === 'CONTROLBOARD') {
+              this.registerCB(socket)
+              socket.join('control')
+              socket.emit('logged_in')
+            } else if (type === 'PLUGIN') {
+              this.connections.push({
+                name,
+                email,
+                id: socket.id,
+                rate: 0,
+                active: false,
+                socket,
+                group_id: 'Unassigned',
+                ingame_match_guid: '',
+                type: 'PLUGIN',
+              })
+              this.registerPlugin(socket)
+              this.io.to('control').emit('plugin:activated', socket.id, name, email)
+              socket.emit('logged_in')
+              socket.join('plugin')
+            } else {
+              this.connections.push({
+                name,
+                email,
+                socket,
+                id: socket.id,
+                group_id: 'Unassigned',
+                scenes: [],
+                type: 'OVERLAY',
+              })
+              this.registerOverlay(socket)
+              socket.join('overlay')
+              socket.emit('logged_in')
+              this.io.to('control').emit('overlay:activated', socket.id, name, email)
+            }
+            Logger.info(`${socket.id} logged in [${name} - ${type}]`)
+            return res.status(200).send({ message: 'Socket logged in.' })
+          })
+          .catch((err) => {
+            return res.status(500).send(err.response.data)
+          })
+      })
+
+      callback(`/login/${socket.id}`)
     })
 
     this.registerTestListeners(socket)
@@ -187,8 +193,6 @@ export class WebsocketService {
   }
 
   registerCB = (socket: Socket) => {
-    console.log(`Client logged in! (${socket.id})`)
-
     socket.on('groups:list', (callback: (groups: string[]) => void) => {
       const groups = []
       for (let i = 0; i < this.connections.length; i++) {
@@ -234,7 +238,7 @@ export class WebsocketService {
     socket.on(
       'scene:visibility',
       (match_id: string, data: { name: string; state: boolean; transition: boolean; [key: string]: any }) => {
-        if (match_id === 'Unassigned') return
+        if (!match_id || match_id === '') return
         this.io.to(match_id).except('plugin').emit('scene:visibility', data)
       },
     )
@@ -245,6 +249,10 @@ export class WebsocketService {
 
     socket.on('scene:update_data', (match_id: string, scene_name: string, data: any) => {
       if (match_id && match_id.length > 0) this.io.to(match_id).emit('scene:update_data', scene_name, data)
+    })
+
+    socket.on('scene:execute', (match_id: string, scene_name: string, name: string) => {
+      if (match_id && match_id.length > 0) this.io.to(match_id).emit('scene:execute', scene_name, name)
     })
 
     socket.on('relay:deactivate', (id: string, callback: (err?: Error) => void) => {
@@ -320,7 +328,7 @@ export class WebsocketService {
             type: 'OVERLAY',
           })
           socket.join('overlay')
-          console.log(`Overlay activated! (${'TEST-RELAY'}) [${'TEST-RELAY@nylund.us'}]`)
+          Logger.info(`Overlay activated! (${'TEST-RELAY'}) [${'TEST-RELAY@nylund.us'}]`)
           this.io.to('control').emit('overlay:activated', socket.id, 'TEST-RELAY', 'TEST-RELAY@nylund.us')
           this.registerOverlay(socket)
         }

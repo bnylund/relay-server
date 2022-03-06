@@ -774,7 +774,7 @@ chai@^4.3.4:
     pathval "^1.1.1"
     type-detect "^4.0.5"
 
-chalk@2.4.2, chalk@^2.0.0:
+chalk@^2.0.0:
   version "2.4.2"
   resolved "https://registry.yarnpkg.com/chalk/-/chalk-2.4.2.tgz#cd42541677a54333cf541a49108c1432b44c9424"
   integrity sha512-Mti+f9lpJNcwF4tWV8/OrTTtF1gZi+f8FqlyAdouralcFWFQWF2+NgCHShjkCb+IFBLq9buZwE1xckQU4peSuQ==
@@ -832,13 +832,6 @@ cli-boxes@^2.2.1:
   version "2.2.1"
   resolved "https://registry.yarnpkg.com/cli-boxes/-/cli-boxes-2.2.1.tgz#ddd5035d25094fce220e9cab40a45840a440318f"
   integrity sha512-y4coMcylgSCdVinjiDBuR8PCC2bLjyGTwEmPb9NHR/QaNU6EUOXcTY/s6VjGMD6ENSEaeQYHCY0GNGS5jfMwPw==
-
-cli-msg@^1.0.0:
-  version "1.0.0"
-  resolved "https://registry.yarnpkg.com/cli-msg/-/cli-msg-1.0.0.tgz#50b1e07d6a2c4fa0a056924bfbdb2413d3e32650"
-  integrity sha512-Thu9bXPqkNnvTR62Sv8As8qMVza6c6n5IyLZrvCNj3CNXx+mzV+DzBb4SQkP7DTFdzV5JpUgq/8loW4DH94X0g==
-  dependencies:
-    chalk "2.4.2"
 
 cliui@^7.0.2:
   version "7.0.4"
@@ -1988,6 +1981,11 @@ joi@*, joi@^17.4.2:
     "@sideway/address" "^4.1.0"
     "@sideway/formula" "^3.0.0"
     "@sideway/pinpoint" "^2.0.0"
+
+js-logger@^1.6.1:
+  version "1.6.1"
+  resolved "https://registry.yarnpkg.com/js-logger/-/js-logger-1.6.1.tgz#8f09671b515e4a6f31dced8fdb8923432e2c60af"
+  integrity sha512-yTgMCPXVjhmg28CuUH8CKjU+cIKL/G+zTu4Fn4lQxs8mRFH/03QTNvEFngcxfg/gRDiQAOoyCKmMTOm9ayOzXA==
 
 js-stringify@^1.0.2:
   version "1.0.2"

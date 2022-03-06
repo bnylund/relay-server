@@ -1,21 +1,35 @@
 require('dotenv').config()
 import { json } from 'body-parser'
-import { success } from 'cli-msg'
 import { WebsocketService } from './websocket'
 import express, { Express } from 'express'
 import cors from '../middleware/headers'
 import http from 'http'
 import https from 'https'
+import Logger from 'js-logger'
+import fs from 'fs'
+
+process.stdin.resume()
+
+Logger.useDefaults({
+  defaultLevel: Logger.INFO,
+  formatter: (messages, context) => {
+    messages.unshift(`[${context.level.name.toUpperCase()}]`)
+    messages.unshift(`[${new Date().toLocaleString()}]`)
+    fs.appendFileSync('log.txt', messages.join(' ') + '\n')
+  },
+})
 
 if (!process.env.NODE_ENV) {
-  console.warn('no NODE_ENV specified, defaulting to production.')
+  Logger.warn('no NODE_ENV specified, defaulting to production.')
   process.env.NODE_ENV = 'production'
 }
 
 if (!process.env.BACKEND_URL) {
-  console.error('No backend URL specified, terminating relay.')
+  Logger.error('No backend URL specified, terminating relay.')
   process.exit(1)
 }
+
+Logger.info('+-+-+-+-+-+ STARTING SERVER +-+-+-+-+-+')
 
 const app: Express = express()
 app.use(json({ limit: '10mb' }), (err, req, res, next) => {
@@ -38,18 +52,34 @@ app.get('/', (req, res) => {
 
 const PORT = Number(process.env.PORT) || 80
 export const httpServer = http.createServer(app).listen(PORT, () => {
-  success.wb(`HTTP Server started on port ${PORT}`)
+  Logger.info(`HTTP Server started on port ${PORT}`)
 
   app.emit('listening')
 })
 
 const HTTPS_PORT = Number(process.env.HTTPS_PORT) || 443
 export const httpsServer = https.createServer(app).listen(HTTPS_PORT, () => {
-  success.wb(`HTTPS Server started on port ${HTTPS_PORT}`)
+  Logger.info(`HTTPS Server started on port ${HTTPS_PORT}`)
 })
 
 export const websocket = new WebsocketService(app)
 websocket.attach(httpServer)
 websocket.attach(httpsServer)
+
+process.on('SIGINT', async () => {
+  try {
+    await new Promise((resolve, reject) => {
+      websocket.io.close((err) => {
+        if (err) reject(err)
+        else resolve(undefined)
+      })
+    })
+  } catch (err) {
+    Logger.error('Error while closing')
+    process.exit(1)
+  }
+  Logger.info('Exiting.')
+  process.exit(0)
+})
 
 export default app

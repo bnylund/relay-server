@@ -1,4 +1,4 @@
 {
-    "ext": "js,ts,json",
-    "ignore": ["./build", "./build/", "./node_modules"]
-  }
+  "ext": "js,ts,json",
+  "ignore": ["./build", "./build/", "./node_modules", "./src/pages"]
+}

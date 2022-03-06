@@ -2,9 +2,10 @@ process.env.RELAY_ENV = 'test'
 import { io, Socket } from 'socket.io-client'
 import { expect } from 'chai'
 
-import { Auth, Websocket } from '../tests/constants'
+import { Websocket } from '../tests/constants'
 import { websocket as wsService } from '../services/http'
 import matches, { Base } from './live'
+import axios from 'axios'
 
 let websocket: Socket
 
@@ -41,18 +42,22 @@ describe('Websocket', () => {
       done()
     })
   })
-  it(
-    'should not authenticate with invalid credentials' /*, (done) => {
-    websocket.emit('login', 'INVALID_TOKEN', 'CONTROLBOARD', (status: string, info: any) => {
-      expect(status).to.be.equal('fail')
-      expect(info).to.exist
-      expect(info.name).to.exist
-      expect(info.version).to.exist
-      expect(info.author).to.exist
-      done()
+  it('should create a login endpoint for the current socket', (done) => {
+    websocket.emit('login', 'PLUGIN', (url: string) => {
+      expect(url).to.exist
+      expect(url).to.be.equal(`/login/${websocket.id}`)
+      axios({
+        method: 'GET',
+        url: `http://localhost:${process.env.PORT}${url}`,
+      })
+        .then((val) => {
+          done()
+        })
+        .catch((err) => {
+          done(err)
+        })
     })
-  }*/,
-  )
+  })
 
   describe('Plugin', () => {
     before((done) => {
@@ -70,7 +75,7 @@ describe('Websocket', () => {
       websocket.removeAllListeners('game:match_ended')
       websocket.removeAllListeners('game:match_destroyed')
     })
-    it('should log in successfully with valid credentials', (done) => {
+    it('should log in successfully', (done) => {
       websocket.emit('login', 'PLUGIN', () => {
         done()
       })
@@ -211,6 +216,14 @@ describe('Websocket', () => {
     })
     beforeEach(() => {
       websocket.removeAllListeners('game:event')
+    })
+    after((done) => {
+      if (websocket) {
+        websocket.on('disconnect', () => {
+          done()
+        })
+        websocket.close()
+      }
     })
     it('should log in successfully with valid credentials', (done) => {
       websocket.emit('login', 'OVERLAY', () => {

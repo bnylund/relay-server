@@ -7,10 +7,13 @@ Here you will find the source code used to provide game data to clients. For dat
 ## Environment
 
 ```
-NODE_ENV=""     # Relay environment         (optional, default: "production", values: "development" | "production")
-PORT=""         # HTTP Port                 (optional, default: 80)
-HTTPS_PORT=""   # HTTPS Port                (optional, default: 443)
-BACKEND_URL=""  # Backend URL               (required)
+NODE_ENV=""               # Relay environment         (optional, default: "production", values: "development" | "production")
+PORT=""                   # HTTP Port                 (optional, default: 80)
+HTTPS_PORT=""             # HTTPS Port                (optional, default: 443)
+BACKEND_URL=""            # Backend URL               (required)
+S3_BUCKET=""              # Bucket to deploy to       (optional)
+AWS_ACCESS_KEY_ID=""      # Deployment Credentials    (optional)
+AWS_SECRET_ACCESS_KEY=""  # Deployment Credentials    (optional)
 ```
 
 ## Logging in (outdated)

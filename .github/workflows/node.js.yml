@@ -31,4 +31,5 @@ jobs:
         env:
           PORT: ${{ secrets.PORT }}
           NODE_ENV: local
-          RELAY_ENV: test
+          HTTPS_PORT: 3218
+          BACKEND_URL: none

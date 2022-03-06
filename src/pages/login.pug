@@ -1,5 +1,30 @@
 html 
   head
     title Relay Login
+    style 
+      include login.css
   body
-    p Login !{socket_id} 
+    div(id="login")
+      h1 Login 
+      p(id="error", hidden="true") Failed to log in.
+      form(action="/login/" + socket_id, method="post", id="form")
+        .field 
+          p Type
+          input(type="text", disabled, placeholder=type)
+        .field
+          p Email
+          input(type="text", id="email", name="email")
+        .field
+          p Password
+          input(type="password", id="password" name="password")
+        .field
+          p Display Name
+          input(type="text", id="name", name="name")
+        button(type="submit", id="submit") Submit
+
+    script(src="https://code.jquery.com/jquery-3.6.0.min.js")
+    script
+      | const socket_id = '!{socket_id}';
+      | const type = '!{type}';
+    script
+      include login.js
