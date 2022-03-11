@@ -2,11 +2,11 @@ require('dotenv').config()
 import { json } from 'body-parser'
 import { WebsocketService } from './websocket'
 import express, { Express } from 'express'
-import cors from '../middleware/headers'
 import http from 'http'
 import https from 'https'
 import Logger from 'js-logger'
 import fs from 'fs'
+import cors from 'cors'
 
 process.stdin.resume()
 
@@ -24,11 +24,6 @@ if (!process.env.NODE_ENV) {
   process.env.NODE_ENV = 'production'
 }
 
-if (!process.env.BACKEND_URL) {
-  Logger.error('No backend URL specified, terminating relay.')
-  process.exit(1)
-}
-
 Logger.info('+-+-+-+-+-+ STARTING SERVER +-+-+-+-+-+')
 
 const app: Express = express()
@@ -39,7 +34,16 @@ app.use(json({ limit: '10mb' }), (err, req, res, next) => {
     next()
   }
 })
-app.use(cors)
+
+app.use(require('../middleware/db').database)
+
+app.use(
+  cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'DELETE', 'PATCH'],
+  }),
+)
+
 app.use((err, req, res, next) => {
   if (err) {
     res.status(500).send({ error: err.message })
@@ -57,8 +61,17 @@ export const httpServer = http.createServer(app).listen(PORT, () => {
   app.emit('listening')
 })
 
+let options
+if (global.USE_TLS !== 'false') {
+  options = {
+    key: fs.readFileSync(`/etc/letsencrypt/live/${process.env.DOMAIN}/privkey.pem`),
+    cert: fs.readFileSync(`/etc/letsencrypt/live/${process.env.DOMAIN}/fullchain.pem`),
+  }
+}
+
 const HTTPS_PORT = Number(process.env.HTTPS_PORT) || 443
-export const httpsServer = https.createServer(app).listen(HTTPS_PORT, () => {
+
+export const httpsServer = https.createServer(options, app).listen(HTTPS_PORT, () => {
   Logger.info(`HTTPS Server started on port ${HTTPS_PORT}`)
 })
 

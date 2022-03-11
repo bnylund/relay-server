@@ -46,16 +46,7 @@ describe('Websocket', () => {
     websocket.emit('login', 'PLUGIN', (url: string) => {
       expect(url).to.exist
       expect(url).to.be.equal(`/login/${websocket.id}`)
-      axios({
-        method: 'GET',
-        url: `http://localhost:${process.env.PORT}${url}`,
-      })
-        .then((val) => {
-          done()
-        })
-        .catch((err) => {
-          done(err)
-        })
+      done()
     })
   })
 

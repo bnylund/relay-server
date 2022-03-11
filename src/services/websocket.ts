@@ -8,6 +8,7 @@ import pug from 'pug'
 import matches, { Base, RocketLeague, updateMatch } from './live'
 import axios from 'axios'
 import Logger from 'js-logger'
+import { decodeToken, login } from './auth'
 
 interface BaseConnection {
   email: string
@@ -46,7 +47,11 @@ export class WebsocketService {
       this.io.on('connection', async (socket: Socket) => {
         let sockets = await this.io.of('/').adapter.sockets(new Set())
         Logger.info(`Client connected! (${socket.id}, ${sockets.size} sockets connected)`)
-        this.registerListeners(socket)
+        try {
+          this.registerListeners(socket)
+        } catch (err) {
+          Logger.error(`Socket [${socket.id}] threw error: ${err.message}`)
+        }
       })
     }
   }
@@ -87,61 +92,73 @@ export class WebsocketService {
         else res.send(pug.compileFile(`${__dirname}/../pages/login.pug`)({ socket_id: socket.id, type }))
       })
 
-      this.app.post(`/login/${socket.id}`, (req, res) => {
-        const { email, password, name, type } = req.body
+      this.app.post(`/login/${socket.id}`, async (req, res) => {
+        const { email, password, token, name, type } = req.body
 
         if (type !== 'CONTROLBOARD' && type !== 'OVERLAY' && type !== 'PLUGIN')
           return res.status(400).send({ error: 'Invalid type.' })
 
+        if ((type === 'OVERLAY' || type === 'PLUGIN') && !name)
+          return res.status(400).send({ error: 'No name specified.' })
+
         if (this.connections.find((x) => x.id === socket.id)) return res.send({ error: 'Already logged in.' })
 
-        return axios({
-          url: [process.env.BACKEND_URL, 'api', 'v1', 'login'].join('/'),
-          data: { email, password },
-          method: 'POST',
-        })
-          .then((val) => {
-            if (type === 'CONTROLBOARD') {
-              this.registerCB(socket)
-              socket.join('control')
-              socket.emit('logged_in')
-            } else if (type === 'PLUGIN') {
-              this.connections.push({
-                name,
-                email,
-                id: socket.id,
-                rate: 0,
-                active: false,
-                socket,
-                group_id: 'Unassigned',
-                ingame_match_guid: '',
-                type: 'PLUGIN',
-              })
-              this.registerPlugin(socket)
-              this.io.to('control').emit('plugin:activated', socket.id, name, email)
-              socket.emit('logged_in')
-              socket.join('plugin')
-            } else {
-              this.connections.push({
-                name,
-                email,
-                socket,
-                id: socket.id,
-                group_id: 'Unassigned',
-                scenes: [],
-                type: 'OVERLAY',
-              })
-              this.registerOverlay(socket)
-              socket.join('overlay')
-              socket.emit('logged_in')
-              this.io.to('control').emit('overlay:activated', socket.id, name, email)
-            }
-            Logger.info(`${socket.id} logged in [${name} - ${type}]`)
-            return res.status(200).send({ message: 'Socket logged in.' })
+        let user
+
+        // Check token (if it exists), otherwise email/pass auth
+        if (token) {
+          try {
+            user = await decodeToken(token)
+          } catch (err) {
+            return res.status(401).send({ error: err.message })
+          }
+        } else {
+          if (!email || !password) return res.status(400).send({ error: 'Email or password not specified.' })
+
+          try {
+            user = await login(email, password)
+          } catch (err) {
+            return res.status(401).send({ error: err.message })
+          }
+        }
+
+        if (!user) return res.status(500).send({ error: 'An unknown error occurred.' })
+
+        if (type === 'CONTROLBOARD') {
+          this.registerCB(socket)
+          socket.join('control')
+          socket.emit('logged_in')
+        } else if (type === 'PLUGIN') {
+          this.connections.push({
+            name,
+            email: user.email,
+            id: socket.id,
+            rate: 0,
+            active: false,
+            group_id: 'Unassigned',
+            ingame_match_guid: '',
+            type: 'PLUGIN',
           })
-          .catch((err) => {
-            return res.status(500).send(err.response.data)
+          this.registerPlugin(socket)
+          this.io.to('control').emit('plugin:activated', socket.id, name, email)
+          socket.emit('logged_in')
+          socket.join(['plugin', 'Unassigned'])
+        } else {
+          this.connections.push({
+            name,
+            email: user.email,
+            id: socket.id,
+            group_id: 'Unassigned',
+            scenes: [],
+            type: 'OVERLAY',
           })
+          this.registerOverlay(socket)
+          socket.join(['overlay', 'Unassigned'])
+          socket.emit('logged_in')
+          this.io.to('control').emit('overlay:activated', socket.id, name, email)
+        }
+        Logger.info(`${socket.id} logged in [${name} - ${type}]`)
+        return res.status(200).send({ message: 'Socket logged in.' })
       })
 
       callback(`/login/${socket.id}`)
@@ -257,8 +274,8 @@ export class WebsocketService {
 
     socket.on('relay:deactivate', (id: string, callback: (err?: Error) => void) => {
       const connection = this.connections.find((x) => x.id === id)
-      if (connection && connection.id === socket.id) {
-        socket.disconnect(true)
+      if (connection) {
+        this.io.sockets.sockets.get(id).disconnect(true)
         callback()
         return
       }
@@ -276,7 +293,7 @@ export class WebsocketService {
         return
       }
       connection.group_id = match
-      connection.socket.join(match)
+      this.io.sockets.sockets.get(sid).join(match)
       callback()
     })
   }
@@ -294,7 +311,7 @@ export class WebsocketService {
           return
         }
         connection.group_id = match
-        connection.socket.join(match)
+        this.io.sockets.sockets.get(sid).join(match)
         callback()
       })
 
@@ -309,7 +326,6 @@ export class WebsocketService {
             id: socket.id,
             rate: 0,
             active: false,
-            socket,
             group_id: 'Unassigned',
             ingame_match_guid: '',
             type: 'PLUGIN',
@@ -321,7 +337,6 @@ export class WebsocketService {
           this.connections.push({
             name: 'TEST-RELAY',
             email: 'TEST-RELAY@nylund.us',
-            socket,
             id: socket.id,
             group_id: 'Unassigned',
             scenes: [],

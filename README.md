@@ -10,8 +10,9 @@ Here you will find the source code used to provide game data to clients. For dat
 NODE_ENV=""               # Relay environment         (optional, default: "production", values: "development" | "production")
 PORT=""                   # HTTP Port                 (optional, default: 80)
 HTTPS_PORT=""             # HTTPS Port                (optional, default: 443)
-BACKEND_URL=""            # Backend URL               (required)
-S3_BUCKET=""              # Bucket to deploy to       (optional)
+MONGO_URL=""            # MongoDB URL               (required)
+JWT_SIGNING_KEY=""            # Key to sign tokens with                (required)
+BUCKET=""              # Bucket to deploy to       (optional)
 AWS_ACCESS_KEY_ID=""      # Deployment Credentials    (optional)
 AWS_SECRET_ACCESS_KEY=""  # Deployment Credentials    (optional)
 ```
