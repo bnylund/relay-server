@@ -5,7 +5,5 @@
 **/build
 yarn-error.log
 src/api/v1*
-src/models*
-src/services/auth*
 artifacts*
 log.txt

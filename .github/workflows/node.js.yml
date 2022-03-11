@@ -32,4 +32,3 @@ jobs:
           PORT: ${{ secrets.PORT }}
           NODE_ENV: local
           HTTPS_PORT: 3218
-          BACKEND_URL: none
