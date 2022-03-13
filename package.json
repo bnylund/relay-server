@@ -1,15 +1,15 @@
 {
   "name": "relay-server",
-  "version": "2.0.5",
+  "version": "2.0.6",
   "description": "Relay server used for the Broadcasting System",
   "scripts": {
     "start": "nodemon -L --exec node -r ts-node/register src",
     "start:prod": "ts-node ./src/index.ts",
     "deploy": "node --no-warnings --experimental-json-modules deploy.mjs",
-    "build": "docker build -t umnrelay:latest -f ./Dockerfile .",
-    "docker": "docker stop relay-server; docker rm --force relay-server; docker rmi umnrelay:latest; yarn build:docker && docker run --name=relay-server -d -p 9000:5555 umnrelay:latest",
-    "docker:win": "docker stop relay-server & docker rm relay-server & docker rmi umnrelay:latest & yarn build:docker && docker run --name=relay-server -d -p 9000:5555 umnrelay:latest",
-    "test": "mocha -r ts-node/register -r dotenv/config --require mocha-suppress-logs --r ./src/tests/setup.ts 'src/**/*.spec.*' --timeout 4000 --exit",
+    "build": "docker build -t relay-server:latest -f ./Dockerfile .",
+    "docker": "docker stop relay-server; docker rm --force relay-server; docker rmi relay-server:latest; yarn build:docker && docker run --name=relay-server -d -p 9000:5555 relay-server:latest",
+    "docker:win": "docker stop relay-server & docker rm relay-server & docker rmi relay-server:latest & yarn build:docker && docker run --name=relay-server -d -p 9000:5555 relay-server:latest",
+    "test": "mocha -r ts-node/register -r dotenv/config -r mocha-suppress-logs -r ./src/tests/setup.ts 'src/**/*.spec.*' --timeout 4000 --exit",
     "lint": "eslint . --ext .ts",
     "bump": "yarn version --patch",
     "bump:minor": "yarn version --minor",
@@ -43,6 +43,7 @@
     "socket.io-client": "^4.3.2"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.54.0",
     "@types/express": "^4.17.13",
     "@types/joi": "^17.2.3",
     "@types/node": "^16.10.3",
@@ -51,7 +52,6 @@
     "@types/uuid": "^8.3.1",
     "@typescript-eslint/eslint-plugin": "^4.32.0",
     "@typescript-eslint/parser": "^4.32.0",
-    "axios": "^0.26.0",
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.19.0",
     "cors": "^2.8.5",

@@ -40,11 +40,16 @@ out.on('close', async () => {
   try {
     const buffer = fs.readFileSync(name)
     const type = await fileTypeFromFile(name)
-    const data = await uploadFile(buffer, `relay-v${config.version}.zip`, type)
+    console.log(await uploadFile(buffer, `relay-v${config.version}.zip`, type))
+
+    console.log('Uploading changelog...')
+    const buffer1 = fs.readFileSync('./CHANGELOG.txt')
+    console.log(await uploadFile(buffer1, `relay-v${config.version}.CHANGELOG`, { mime: 'text/plain' }))
+
     console.log('Done!')
-    console.log(data)
   } catch (err) {
     console.error(`Failed to upload to S3.`)
+    console.log(err)
     throw err
   }
 })

@@ -26,6 +26,8 @@ if (!process.env.NODE_ENV) {
 
 Logger.info('+-+-+-+-+-+ STARTING SERVER +-+-+-+-+-+')
 
+global.updatePending = false
+
 const app: Express = express()
 app.use(json({ limit: '10mb' }), (err, req, res, next) => {
   if (err) {

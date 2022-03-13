@@ -1,14 +1,5 @@
 import { Base } from '../services/live'
 
-export class Auth {
-  static USER1_EMAIL: string = 'TEST_USER1@nylund.us'
-  static USER1_PASSWORD: string = 'test_password'
-  static USER1_EXPIRED_TOKEN: string =
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjYxODgzN2RmMTVjOTE0ODEzYTJhMzJjMyIsImV4cGlyYXRpb24iOiIyMDIxLTExLTA3VDIwOjMyOjMxLjkxNFoiLCJpYXQiOjE2MzYzMTcxNTF9.nim3WXZSMmNdsX_9gy_Ly68lIM9aPqWedal50EW83RA'
-  static USER1_TOKEN: string =
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjYxN2IzODNhZWFlZTgzZGViY2E5MWUyNyIsImV4cGlyYXRpb24iOiIyMDM1LTA3LTI1VDE2OjI3OjMxLjEzNFoiLCJpYXQiOjE2MzY5OTM2NTF9.YIvDHqhlJnTY1M3raPYMgnexrxOHT8xrfAE9COr9kr8'
-}
-
 export class Websocket {
   static MATCH_ID: string = 'a1b8e4ff-8ff5-4089-b9c1-fa59472efa58'
   static UPDATE_STATE: any = {

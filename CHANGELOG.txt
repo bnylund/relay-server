@@ -1,0 +1,8 @@
+- Added an updater (this very one) for easy, one-click relay updates
+- Added support for scene buttons
+- Current scene data is now sent to control boards
+- Refactors (matches -> groups)
+- Added certbot! Only secure websockets 'round here. Grabs a new (if required) certificate before each launch.
+- Fixed up the deployment script to allow changelogs (like this one) to be uploaded as well
+- Added a heartbeat to the relay (Beats every 100ms)
+- Login page now automatically closes after 3s once the user logs in

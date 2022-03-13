@@ -4,7 +4,11 @@
 
 Here you will find the source code used to provide game data to clients. For data transportation it uses [socket.io 4.x](https://socket.io/docs/v4/).
 
-## Environment
+# Installation
+
+To install all required dependencies for the relay, execute `yarn`. Then, to run the relay, execute `yarn start`
+
+# Environment
 
 ```
 NODE_ENV=""               # Relay environment         (optional, default: "production", values: "development" | "production")
@@ -17,17 +21,21 @@ AWS_ACCESS_KEY_ID=""      # Deployment Credentials    (optional)
 AWS_SECRET_ACCESS_KEY=""  # Deployment Credentials    (optional)
 ```
 
-## Logging in (outdated)
+# Testing
+
+To test the relay, execute `yarn test`. You do not need any of the environment variables filled out to execute the tests.
+
+# Logging in
 
 To get access to all required functions in the socket server, you must first log in. You can do this by sending a login event after connecting:
 
 ```typescript
-socket.emit('login', token, 'CONTROLBOARD' /* or */ 'PLUGIN' /* or */ 'OVERLAY', (status: string, info: { name: string; version: string; author: string }) => {
-  // Do stuff here
+socket.emit('login', 'CONTROLBOARD' /* or */ 'PLUGIN' /* or */ 'OVERLAY', (path: string) => {
+  // Open up path or whatever
 })
 ```
 
-## Relay Listeners
+# Relay Listeners
 
 |Listener|Receivers|arg1|arg2|arg3|Description|
 |---------------------|--------------|--------------------|-----------------|---------------|---------------------------------------------------------------------------|
@@ -38,12 +46,12 @@ socket.emit('login', token, 'CONTROLBOARD' /* or */ 'PLUGIN' /* or */ 'OVERLAY',
 |overlay:deactivated|CONTROLBOARD|id: string|||Fires when an overlay gets deactivated|
 |plugin:activated|CONTROLBOARD|id: string|name: string|email: string|Fires when a plugin gets activated|
 |plugin:deactivated|CONTROLBOARD|id: string|||Fires when a plugin gets deactivated|
-| game:event|ALL, -PLUGIN|eventData: any|||Fires when a game event is received. Same match room only|
+|game:event|ALL, -PLUGIN|eventData: any|||Fires when a game event is received. Same match room only|
 |game:ended|ALL, -PLUGIN|match: Match|teamnum: 0 \| 1||Fires when a game finishes. Same match room only|
 |scene:visibility|OVERLAY|data: SceneData|||Fires when a scene's visibility gets changed. Same match room only|
 |scene:update_data|OVERLAY|scene_name: string|data: any||Fires when scene data gets updated. Same match room only|
 
-## Relay Commands
+# Relay Commands
 |Command|Senders|arg1|arg2|arg3|arg4|Description|
 |--------------------|--------------|--------------------------------------|----------------------------------|---------------------------------|---------------------------------|----------------------------------------|
 |match:update|CONTROLBOARD|match_id: string|data: Partial<Match>|||Updates the current match|
@@ -58,3 +66,4 @@ socket.emit('login', token, 'CONTROLBOARD' /* or */ 'PLUGIN' /* or */ 'OVERLAY',
 |match:get|ALL|match_id: string|callback: (match: Match) => void|||Gets current match by ID|
 |match:get_all|ALL|callback: (matches: Match[]) => void||||Gets all running matches|
 |groups:list|ALL|callback: (groups: string[]) => void||||Gets all group names|
+|info||ALL|callback: (info: any) => void|||Gets current relay information|

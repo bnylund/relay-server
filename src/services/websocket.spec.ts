@@ -1,11 +1,9 @@
-process.env.RELAY_ENV = 'test'
 import { io, Socket } from 'socket.io-client'
 import { expect } from 'chai'
 
 import { Websocket } from '../tests/constants'
 import { websocket as wsService } from '../services/http'
 import matches, { Base } from './live'
-import axios from 'axios'
 
 let websocket: Socket
 

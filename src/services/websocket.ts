@@ -6,35 +6,47 @@ import { Express } from 'express'
 import pug from 'pug'
 
 import matches, { Base, RocketLeague, updateMatch } from './live'
-import axios from 'axios'
 import Logger from 'js-logger'
 import { decodeToken, login } from './auth'
+import { getLatest, installUpdate } from './updater'
+import { _Object } from '@aws-sdk/client-s3'
+
+import config from '../../package.json'
 
 interface BaseConnection {
-  email: string
-  name: string
-  id: string
-  socket: Socket
+  readonly id: string
+  readonly type: 'OVERLAY' | 'PLUGIN' | 'CONTROLBOARD'
+  readonly email: string
+}
+
+interface GroupedConnection extends BaseConnection {
   group_id: string
-  type: 'OVERLAY' | 'PLUGIN' | 'CONTROLBOARD'
+  readonly name: string
 }
 
-interface Overlay extends BaseConnection {
-  scenes: { name: string; dataFormat: any }[]
+interface Overlay extends GroupedConnection {
+  scenes: { name: string; dataFormat: any; data: any; buttons: string[] }[]
 }
 
-interface Plugin extends BaseConnection {
+interface Plugin extends GroupedConnection {
   rate: number
   active: boolean
-  ingame_match_guid: string // Used for failover
+  ingame_match_guid: string // Used for failover (not tested yet)
 }
 
-// TODO: Logger, (opt) Modular event handlers
 export class WebsocketService {
   io: Server
   private connections: any[] = []
 
-  constructor(private app: Express) {}
+  constructor(private app: Express) {
+    setInterval(() => {
+      if (this.io && this.io.sockets && this.io.sockets.sockets) {
+        this.io.sockets.sockets.forEach((x) => {
+          x.emit('heartbeat')
+        })
+      }
+    }, 100)
+  }
 
   attach = (srv: HTTPServer | HTTPSServer, opts?: Partial<ServerOptions>) => {
     srv.once('listening', () => {
@@ -128,6 +140,11 @@ export class WebsocketService {
           this.registerCB(socket)
           socket.join('control')
           socket.emit('logged_in')
+          this.connections.push({
+            id: socket.id,
+            type: 'CONTROLBOARD',
+            email: user.email,
+          })
         } else if (type === 'PLUGIN') {
           this.connections.push({
             name,
@@ -135,25 +152,25 @@ export class WebsocketService {
             id: socket.id,
             rate: 0,
             active: false,
-            group_id: 'Unassigned',
+            group_id: '',
             ingame_match_guid: '',
             type: 'PLUGIN',
           })
           this.registerPlugin(socket)
           this.io.to('control').emit('plugin:activated', socket.id, name, email)
           socket.emit('logged_in')
-          socket.join(['plugin', 'Unassigned'])
+          socket.join(['plugin'])
         } else {
           this.connections.push({
             name,
             email: user.email,
             id: socket.id,
-            group_id: 'Unassigned',
+            group_id: '',
             scenes: [],
             type: 'OVERLAY',
           })
           this.registerOverlay(socket)
-          socket.join(['overlay', 'Unassigned'])
+          socket.join(['overlay'])
           socket.emit('logged_in')
           this.io.to('control').emit('overlay:activated', socket.id, name, email)
         }
@@ -164,15 +181,29 @@ export class WebsocketService {
       callback(`/login/${socket.id}`)
     })
 
+    socket.on('info', (callback: (info: any) => void) => {
+      callback({
+        version: config.version,
+        name: config.name,
+        author: config.author,
+      })
+    })
+
+    socket.emit('info', {
+      version: config.version,
+      name: config.name,
+      author: config.author,
+    })
+
     this.registerTestListeners(socket)
   }
 
   registerOverlay = (socket: Socket) => {
-    socket.on('scene:register', (name, dataFormat) => {
+    socket.on('scene:register', (name, dataFormat, buttons) => {
       const overlay = this.connections.find((x) => x.id === socket.id)
       if (!overlay) return
       overlay.scenes = overlay.scenes.filter((x) => x.name !== name)
-      overlay.scenes.push({ name, dataFormat })
+      overlay.scenes.push({ name, dataFormat, buttons })
     })
   }
 
@@ -192,8 +223,8 @@ export class WebsocketService {
         return
       }
 
-      // If there isn't an associated match, don't do anything
-      if (plugin.group_id === 'Unassigned') return
+      // If there isn't an associated group, don't do anything
+      if (plugin.group_id === '') return
 
       // We send our own state events, so ignore game:update_state
       if (evData.event !== 'game:update_state') this.io.to(plugin.group_id).except('plugin').emit('game:event', evData)
@@ -213,7 +244,7 @@ export class WebsocketService {
     socket.on('groups:list', (callback: (groups: string[]) => void) => {
       const groups = []
       for (let i = 0; i < this.connections.length; i++) {
-        if (!groups.includes(this.connections[i].group_id)) {
+        if (!groups.includes(this.connections[i].group_id) && this.connections[i].group_id !== '') {
           groups.push(this.connections[i].group_id)
         }
       }
@@ -254,9 +285,9 @@ export class WebsocketService {
 
     socket.on(
       'scene:visibility',
-      (match_id: string, data: { name: string; state: boolean; transition: boolean; [key: string]: any }) => {
-        if (!match_id || match_id === '') return
-        this.io.to(match_id).except('plugin').emit('scene:visibility', data)
+      (group_id: string, data: { name: string; state: boolean; transition: boolean; [key: string]: any }) => {
+        if (!group_id || group_id === '') return
+        this.io.to(group_id).except('plugin').emit('scene:visibility', data)
       },
     )
 
@@ -264,37 +295,99 @@ export class WebsocketService {
       cb(this.connections)
     })
 
-    socket.on('scene:update_data', (match_id: string, scene_name: string, data: any) => {
-      if (match_id && match_id.length > 0) this.io.to(match_id).emit('scene:update_data', scene_name, data)
+    socket.on('scene:update_data', (group_id: string, scene_name: string, data: any) => {
+      if (group_id && group_id.length > 0) {
+        this.io.to(group_id).emit('scene:update_data', scene_name, data)
+        this.io.to('control').emit('scene:update_data', group_id, scene_name, data)
+
+        // Save "current" data for each overlay in the group
+        this.connections.forEach((x) => {
+          if (x.type === 'OVERLAY' && x.group_id === group_id) {
+            const scene = x.scenes.find((sn) => sn.name === scene_name)
+            if (scene) scene.data = data
+          }
+        })
+      }
     })
 
-    socket.on('scene:execute', (match_id: string, scene_name: string, name: string) => {
-      if (match_id && match_id.length > 0) this.io.to(match_id).emit('scene:execute', scene_name, name)
+    // DOUBLE CHECK IMPLEMENTATION OF THIS ON OVERLAY SIDE
+    socket.on('scene:execute', (group_id: string, scene_name: string, name: string) => {
+      if (group_id && group_id.length > 0) this.io.to(group_id).emit('scene:execute', scene_name, name)
     })
 
-    socket.on('relay:deactivate', (id: string, callback: (err?: Error) => void) => {
+    socket.on('relay:deactivate', (id: string, callback: (err?: string) => void) => {
       const connection = this.connections.find((x) => x.id === id)
-      if (connection) {
+      if (connection && connection.type !== 'CONTROLBOARD') {
         this.io.sockets.sockets.get(id).disconnect(true)
         callback()
         return
       }
-      callback(new Error('SocketID not found.'))
+      callback('SocketID not found.')
     })
 
-    socket.on('relay:assign', (sid: string, match: string, callback: (err?: Error) => void) => {
-      if (!match || match === '') {
-        callback(new Error('Invalid match name.'))
+    socket.on('relay:assign', (sid: string, group: string, callback: (err?: string) => void) => {
+      if (!group || group === '') {
+        callback('Invalid match name.')
         return
       }
       const connection = this.connections.find((x) => x.id === sid)
       if (!connection) {
-        callback(new Error('SocketID not found.'))
+        callback('SocketID not found.')
         return
       }
-      connection.group_id = match
-      this.io.sockets.sockets.get(sid).join(match)
+      connection.group_id = group
+      this.io.sockets.sockets.get(sid).join(group)
       callback()
+    })
+
+    socket.on('check_for_updates', async (callback: (latest: _Object, err?: string) => void) => {
+      if (global.updatePending === true) {
+        callback(null, 'Update already complete, pending reboot.')
+        return
+      }
+
+      const latest = await getLatest()
+      if (latest === null) {
+        callback(null, 'No relays found in bucket.')
+        return
+      }
+
+      if (latest.Key.replace('relay-v', '').replace('.zip', '') === String(config.version)) {
+        callback(null, 'Already up to date.')
+        return
+      }
+
+      callback(latest)
+    })
+
+    socket.on('update', async (callback: (err?: string) => void) => {
+      if (global.pendingUpdate === true) {
+        callback('Update already complete, changes will take effect on next reboot.')
+        return
+      }
+
+      const latest = await getLatest()
+      if (latest === null) {
+        callback('No relays found in bucket.')
+        return
+      }
+
+      if (latest.Key.replace('relay-v', '').replace('.zip', '') === String(config.version)) {
+        callback('Already up to date.')
+        return
+      }
+      Logger.info('Initiating update.')
+
+      // Changes won't take effect until next boot.
+      installUpdate(latest)
+        .then((val) => {
+          Logger.info('Updated!')
+          callback()
+        })
+        .catch((err) => {
+          Logger.error('Failed to update: ' + err.message)
+          callback(err.message)
+        })
     })
   }
 

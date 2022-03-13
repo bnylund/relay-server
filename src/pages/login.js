@@ -20,6 +20,9 @@ $(() => {
       dataType: 'json',
       success: (data, status, xhr) => {
         document.getElementById('login').innerHTML = "<h2 id='success'>Logged in!</h2>"
+        setTimeout(() => {
+          window.close()
+        }, 3000)
       },
       error: () => {
         document.getElementById('error').hidden = false
