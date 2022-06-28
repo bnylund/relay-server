@@ -1,7 +1,7 @@
 let matches: Base.Match[] = []
 
 export function updateMatch(id: string, data: Partial<Base.Match>) {
-  const match = matches.find((x) => x.id === id)
+  const match = matches.find((x) => x.group_id === id)
   if (!match) {
     return undefined
   }
@@ -43,6 +43,7 @@ export namespace Base {
     teamSize: number
     hasWinner: boolean
     winner: number
+    group_id: string
     [key: string]: any
   }
 

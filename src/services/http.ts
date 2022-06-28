@@ -64,7 +64,7 @@ export const httpServer = http.createServer(app).listen(PORT, () => {
 })
 
 let options
-if (global.USE_TLS !== 'false') {
+if (global.USE_TLS !== 'false' && process.env.NODE_ENV !== 'local') {
   options = {
     key: fs.readFileSync(`/etc/letsencrypt/live/${process.env.DOMAIN}/privkey.pem`),
     cert: fs.readFileSync(`/etc/letsencrypt/live/${process.env.DOMAIN}/fullchain.pem`),

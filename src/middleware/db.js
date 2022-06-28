@@ -27,6 +27,6 @@ module.exports.database = (req, res, next) => {
     })
     .catch((err) => {
       console.log(err)
-      return res.status(500).send({ error: 'Failed to connect to database.' })
+      if (res) return res.status(500).send({ error: 'Failed to connect to database.' })
     })
 }

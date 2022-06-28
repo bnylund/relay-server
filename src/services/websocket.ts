@@ -30,6 +30,7 @@ interface Overlay extends GroupedConnection {
 
 interface Plugin extends GroupedConnection {
   rate: number
+  input: number
   active: boolean
   ingame_match_guid: string // Used for failover (not tested yet)
 }
@@ -97,6 +98,83 @@ export class WebsocketService {
       callback(matches)
     })
 
+    socket.on('group:listen', (group: string) => {
+      socket.join(['overlay', group])
+    })
+
+    socket.on('groups:list', (callback: (groups: string[]) => void) => {
+      const groups = ['Group 1']
+      for (let i = 0; i < this.connections.length; i++) {
+        if (!groups.includes(this.connections[i].group_id) && this.connections[i].group_id !== '') {
+          groups.push(this.connections[i].group_id)
+        }
+      }
+      callback(groups)
+    })
+
+    // no need for callback, this will emit logged_in like the regular website auth does
+    socket.on('login:token', async (token: string, type: 'OVERLAY' | 'PLUGIN' | 'CONTROLBOARD', name?: string) => {
+      if (type !== 'CONTROLBOARD' && type !== 'OVERLAY' && type !== 'PLUGIN') return
+
+      if ((type === 'OVERLAY' || type === 'PLUGIN') && !name) return
+
+      if (this.connections.find((x) => x.id === socket.id)) return
+
+      // do funky http middleware business to prep database
+      require('../middleware/db').database(undefined, undefined, async () => {
+        let user
+        try {
+          user = await decodeToken(token)
+        } catch (err) {
+          console.log(err)
+          return
+        }
+
+        if (!user) return
+
+        if (type === 'CONTROLBOARD') {
+          this.registerCB(socket)
+          socket.join('control')
+          socket.emit('logged_in')
+          this.connections.push({
+            id: socket.id,
+            type: 'CONTROLBOARD',
+            email: user.email,
+          })
+        } else if (type === 'PLUGIN') {
+          this.connections.push({
+            name,
+            email: user.email,
+            id: socket.id,
+            input: 0,
+            rate: 0,
+            active: false,
+            group_id: process.env.NODE_ENV === 'local' ? 'TEST' : '',
+            ingame_match_guid: '',
+            type: 'PLUGIN',
+          })
+          this.registerPlugin(socket)
+          this.io.to('control').emit('plugin:activated', socket.id, name, user.email)
+          socket.emit('logged_in')
+          socket.join(process.env.NODE_ENV === 'local' ? ['plugin', 'TEST'] : ['plugin'])
+        } else {
+          this.connections.push({
+            name,
+            email: user.email,
+            id: socket.id,
+            group_id: process.env.NODE_ENV === 'local' ? 'TEST' : '',
+            scenes: [],
+            type: 'OVERLAY',
+          })
+          this.registerOverlay(socket)
+          socket.join(process.env.NODE_ENV === 'local' ? ['overlay', 'TEST'] : ['overlay'])
+          socket.emit('logged_in')
+          this.io.to('control').emit('overlay:activated', socket.id, name, user.email)
+        }
+        Logger.info(`${socket.id} logged in [DIRECT, ${name} - ${type}]`)
+      })
+    })
+
     socket.on('login', (type: 'OVERLAY' | 'PLUGIN' | 'CONTROLBOARD', callback: (path: string) => void) => {
       Logger.info(`Creating endpoints for ${socket.id} - ${type}`)
       this.app.get(`/login/${socket.id}`, (req, res) => {
@@ -151,26 +229,27 @@ export class WebsocketService {
             email: user.email,
             id: socket.id,
             rate: 0,
+            input: 0,
             active: false,
-            group_id: '',
+            group_id: process.env.NODE_ENV === 'local' ? 'TEST' : '',
             ingame_match_guid: '',
             type: 'PLUGIN',
           })
           this.registerPlugin(socket)
           this.io.to('control').emit('plugin:activated', socket.id, name, email)
           socket.emit('logged_in')
-          socket.join(['plugin'])
+          socket.join(process.env.NODE_ENV === 'local' ? ['plugin', 'TEST'] : ['plugin'])
         } else {
           this.connections.push({
             name,
             email: user.email,
             id: socket.id,
-            group_id: '',
+            group_id: process.env.NODE_ENV === 'local' ? 'TEST' : '',
             scenes: [],
             type: 'OVERLAY',
           })
           this.registerOverlay(socket)
-          socket.join(['overlay'])
+          socket.join(process.env.NODE_ENV === 'local' ? ['overlay', 'TEST'] : ['overlay'])
           socket.emit('logged_in')
           this.io.to('control').emit('overlay:activated', socket.id, name, email)
         }
@@ -212,7 +291,7 @@ export class WebsocketService {
       callback()
     })
 
-    socket.on('game:event', (ev: string) => {
+    socket.on('game event', (ev: string) => {
       // incoming json game events from socketio-cpp are in string form
       let evData = JSON.parse(ev)
 
@@ -226,12 +305,28 @@ export class WebsocketService {
       // If there isn't an associated group, don't do anything
       if (plugin.group_id === '') return
 
+      if (!matches.find((x) => x.group_id === plugin.group_id)) {
+        const match = {
+          group_id: plugin.group_id,
+          winner: -1,
+          hasWinner: false,
+          teamSize: 3,
+          bestOf: 5,
+        }
+        console.log(`Creating new match for group ${plugin.group_id}`)
+        matches.push(match)
+      }
+
+      plugin.input++
+
       // We send our own state events, so ignore game:update_state
-      if (evData.event !== 'game:update_state') this.io.to(plugin.group_id).except('plugin').emit('game:event', evData)
-      else {
+      if (evData.event !== 'game:update_state') {
+        this.io.to(plugin.group_id).except('plugin').emit('game:event', evData)
+      } else {
         const plugin = this.connections.find((x) => x.id === socket.id)
         plugin.rate++
         setTimeout(() => {
+          // ...why are you booing me? im right! [insert meme here]
           if (plugin) plugin.rate--
         }, 1000)
       }
@@ -241,16 +336,6 @@ export class WebsocketService {
   }
 
   registerCB = (socket: Socket) => {
-    socket.on('groups:list', (callback: (groups: string[]) => void) => {
-      const groups = []
-      for (let i = 0; i < this.connections.length; i++) {
-        if (!groups.includes(this.connections[i].group_id) && this.connections[i].group_id !== '') {
-          groups.push(this.connections[i].group_id)
-        }
-      }
-      callback(groups)
-    })
-
     socket.on('match:update', (id: string, matchData: Partial<Base.Match>) => {
       const match = updateMatch(id, matchData)
       this.io.to('control').emit('match:updated', id, match)
@@ -310,7 +395,6 @@ export class WebsocketService {
       }
     })
 
-    // DOUBLE CHECK IMPLEMENTATION OF THIS ON OVERLAY SIDE
     socket.on('scene:execute', (group_id: string, scene_name: string, name: string) => {
       if (group_id && group_id.length > 0) this.io.to(group_id).emit('scene:execute', scene_name, name)
     })
@@ -335,6 +419,22 @@ export class WebsocketService {
         callback('SocketID not found.')
         return
       }
+
+      if (connection.type === 'PLUGIN') {
+        // If no match is present, create new
+        if (!matches.find((x) => x.group_id === group)) {
+          const match = {
+            group_id: group,
+            winner: -1,
+            hasWinner: false,
+            teamSize: 3,
+            bestOf: 5,
+          }
+          console.log(`Creating new match for group ${group}`)
+          matches.push(match)
+        }
+      }
+
       connection.group_id = group
       this.io.sockets.sockets.get(sid).join(group)
       callback()
@@ -418,6 +518,7 @@ export class WebsocketService {
             email: 'TEST-RELAY@nylund.us',
             id: socket.id,
             rate: 0,
+            input: 0,
             active: false,
             group_id: 'Unassigned',
             ingame_match_guid: '',
@@ -449,7 +550,7 @@ export class WebsocketService {
   // TODO: Maybe add external, modular parsers that do things when other things happen?
   parseMessage = (plugin: Plugin, json: { game: string; event: string; data: any }) => {
     if (!json.event) return
-    const match = matches.find((x) => x.id === plugin.group_id)
+    const match = matches.find((x) => x.group_id === plugin.group_id)
     if (!match) return
 
     if (json.event === 'game:update_state') {
@@ -463,7 +564,25 @@ export class WebsocketService {
 
       // Make game-specific updates
       if (json.game === 'ROCKET_LEAGUE') {
-        while (g.teams.length < 2) g.teams.push({} as RocketLeague.Team) // Create defaults
+        while (g.teams.length < 2) {
+          g.teams.push({
+            roster: [],
+            colors:
+              g.teams.length === 0
+                ? {
+                    primary: '#0C88FC',
+                    secondary: '#ffffff',
+                  }
+                : {
+                    primary: '#FC7C0C',
+                    secondary: '#ffffff',
+                  },
+            name: g.teams.length === 0 ? 'Blue Team' : 'Orange Team',
+            avatar: 'https://www.dropbox.com/s/vr7lbsauae31am6/rl-logo.png?dl=1',
+            score: 0,
+            series: 0,
+          } as RocketLeague.Team) // Create defaults
+        }
 
         // Home team
         let allPlayers = data.players as RocketLeague.Player[]
@@ -503,14 +622,13 @@ export class WebsocketService {
         match.winner = winning_team
       }
 
+      updateMatch(plugin.group_id, match)
+
       if (match.hasWinner) {
         // Pass the entire match in the game ended
         this.io.to(plugin.group_id).except('plugin').emit('game:ended', match, winning_team)
         this.io.to(plugin.group_id).except('plugin').emit('match:ended', match)
       } else this.io.to(plugin.group_id).except('plugin').emit('game:ended', match, winning_team)
-    } else if (json.event === 'game:match_destroyed') {
-      if (!plugin.active) return
-      delete match.game
     }
 
     if (process.env.NODE_ENV === 'test') {

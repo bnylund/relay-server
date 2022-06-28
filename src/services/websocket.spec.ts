@@ -28,7 +28,7 @@ describe('Websocket', () => {
       teamSize: 3,
       hasWinner: false,
       winner: -1,
-      id: Websocket.MATCH_ID,
+      group_id: Websocket.MATCH_ID,
       stats_id: '',
     })
     expect(matches.length).to.be.equal(1)
@@ -152,7 +152,7 @@ describe('Websocket', () => {
         expect(match.teamSize).to.be.equal(4)
         expect(match.hasWinner).to.be.false
         expect(match.winner).to.be.equal(-1)
-        expect(match.id).to.be.equal(Websocket.MATCH_ID)
+        expect(match.group_id).to.be.equal(Websocket.MATCH_ID)
         done()
       })
       websocket.emit('match:update', Websocket.MATCH_ID, Websocket.MATCH_UPDATE)
