@@ -98,7 +98,7 @@ export class WebsocketService {
     })
 
     socket.on('groups:list', (callback: (groups: string[]) => void) => {
-      const groups = ['Group 1']
+      const groups = ['LOCALHOST']
       for (let i = 0; i < this.connections.length; i++) {
         if (!groups.includes(this.connections[i].group_id) && this.connections[i].group_id !== '') {
           groups.push(this.connections[i].group_id)
@@ -132,25 +132,25 @@ export class WebsocketService {
           input: 0,
           rate: 0,
           active: false,
-          group_id: process.env.NODE_ENV === 'local' ? 'TEST' : '',
+          group_id: 'LOCALHOST',
           ingame_match_guid: '',
           type: 'PLUGIN',
         })
         this.registerPlugin(socket)
         this.io.to('control').emit('plugin:activated', socket.id, name, 'null@rocketcast.io')
         socket.emit('logged_in')
-        socket.join(process.env.NODE_ENV === 'local' ? ['plugin', 'TEST'] : ['plugin'])
+        socket.join(['plugin', 'LOCALHOST'])
       } else {
         this.connections.push({
           name,
           email: 'null@rocketcast.io',
           id: socket.id,
-          group_id: process.env.NODE_ENV === 'local' ? 'TEST' : '',
+          group_id: 'LOCALHOST',
           scenes: [],
           type: 'OVERLAY',
         })
         this.registerOverlay(socket)
-        socket.join(process.env.NODE_ENV === 'local' ? ['overlay', 'TEST'] : ['overlay'])
+        socket.join(['overlay', 'LOCALHOST'])
         socket.emit('logged_in')
         this.io.to('control').emit('overlay:activated', socket.id, name, 'null@rocketcast.io')
       }
