@@ -56,30 +56,15 @@ app.get('/', (req, res) => {
   return res.status(200).send({})
 })
 
-const PORT = Number(process.env.PORT) || 80
+const PORT = process.argv.length >= 3 ? Number(process.argv[2]) : 80
 export const httpServer = http.createServer(app).listen(PORT, () => {
   Logger.info(`HTTP Server started on port ${PORT}`)
 
   app.emit('listening')
 })
 
-let options
-if (global.USE_TLS !== 'false' && process.env.NODE_ENV !== 'local') {
-  options = {
-    key: fs.readFileSync(`/etc/letsencrypt/live/${process.env.DOMAIN}/privkey.pem`),
-    cert: fs.readFileSync(`/etc/letsencrypt/live/${process.env.DOMAIN}/fullchain.pem`),
-  }
-}
-
-const HTTPS_PORT = Number(process.env.HTTPS_PORT) || 443
-
-export const httpsServer = https.createServer(options, app).listen(HTTPS_PORT, () => {
-  Logger.info(`HTTPS Server started on port ${HTTPS_PORT}`)
-})
-
 export const websocket = new WebsocketService(app)
 websocket.attach(httpServer)
-websocket.attach(httpsServer)
 
 process.on('SIGINT', async () => {
   try {

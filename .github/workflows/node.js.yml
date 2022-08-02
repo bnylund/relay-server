@@ -31,4 +31,3 @@ jobs:
         env:
           PORT: ${{ secrets.PORT }}
           NODE_ENV: local
-          HTTPS_PORT: 3218

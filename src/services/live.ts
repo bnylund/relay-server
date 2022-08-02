@@ -23,10 +23,7 @@ export namespace Base {
   }
 
   export interface Team {
-    roster: string[]
-    colors: Base.Colors
-    name: string
-    avatar: string
+    info: any // Extract team info to its own field, this will be provided by an API
     score: number
     series: number
     [key: string]: any
@@ -40,16 +37,10 @@ export namespace Base {
   export interface Match {
     game?: Base.Game
     bestOf: number
-    teamSize: number
     hasWinner: boolean
     winner: number
     group_id: string
     [key: string]: any
-  }
-
-  export interface Colors {
-    primary: string
-    secondary: string
   }
 }
 

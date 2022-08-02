@@ -1,15 +1,10 @@
 import { Socket, Server, ServerOptions } from 'socket.io'
-import { Server as HTTPSServer } from 'https'
 import { Server as HTTPServer } from 'http'
 import { AddressInfo } from 'net'
 import { Express } from 'express'
-import pug from 'pug'
 
 import matches, { Base, RocketLeague, updateMatch } from './live'
 import Logger from 'js-logger'
-import { decodeToken, login } from './auth'
-import { getLatest, installUpdate } from './updater'
-import { _Object } from '@aws-sdk/client-s3'
 
 import config from '../../package.json'
 
@@ -49,7 +44,7 @@ export class WebsocketService {
     }, 100)
   }
 
-  attach = (srv: HTTPServer | HTTPSServer, opts?: Partial<ServerOptions>) => {
+  attach = (srv: HTTPServer, opts?: Partial<ServerOptions>) => {
     srv.once('listening', () => {
       Logger.info(`Attached Socket.IO to port ${(<AddressInfo>srv.address()).port}`)
     })
@@ -113,151 +108,53 @@ export class WebsocketService {
     })
 
     // no need for callback, this will emit logged_in like the regular website auth does
-    socket.on('login:token', async (token: string, type: 'OVERLAY' | 'PLUGIN' | 'CONTROLBOARD', name?: string) => {
+    socket.on('login', async (type: 'OVERLAY' | 'PLUGIN' | 'CONTROLBOARD', name?: string) => {
       if (type !== 'CONTROLBOARD' && type !== 'OVERLAY' && type !== 'PLUGIN') return
 
       if ((type === 'OVERLAY' || type === 'PLUGIN') && !name) return
 
       if (this.connections.find((x) => x.id === socket.id)) return
 
-      // do funky http middleware business to prep database
-      require('../middleware/db').database(undefined, undefined, async () => {
-        let user
-        try {
-          user = await decodeToken(token)
-        } catch (err) {
-          console.log(err)
-          return
-        }
-
-        if (!user) return
-
-        if (type === 'CONTROLBOARD') {
-          this.registerCB(socket)
-          socket.join('control')
-          socket.emit('logged_in')
-          this.connections.push({
-            id: socket.id,
-            type: 'CONTROLBOARD',
-            email: user.email,
-          })
-        } else if (type === 'PLUGIN') {
-          this.connections.push({
-            name,
-            email: user.email,
-            id: socket.id,
-            input: 0,
-            rate: 0,
-            active: false,
-            group_id: process.env.NODE_ENV === 'local' ? 'TEST' : '',
-            ingame_match_guid: '',
-            type: 'PLUGIN',
-          })
-          this.registerPlugin(socket)
-          this.io.to('control').emit('plugin:activated', socket.id, name, user.email)
-          socket.emit('logged_in')
-          socket.join(process.env.NODE_ENV === 'local' ? ['plugin', 'TEST'] : ['plugin'])
-        } else {
-          this.connections.push({
-            name,
-            email: user.email,
-            id: socket.id,
-            group_id: process.env.NODE_ENV === 'local' ? 'TEST' : '',
-            scenes: [],
-            type: 'OVERLAY',
-          })
-          this.registerOverlay(socket)
-          socket.join(process.env.NODE_ENV === 'local' ? ['overlay', 'TEST'] : ['overlay'])
-          socket.emit('logged_in')
-          this.io.to('control').emit('overlay:activated', socket.id, name, user.email)
-        }
-        Logger.info(`${socket.id} logged in [DIRECT, ${name} - ${type}]`)
-      })
-    })
-
-    socket.on('login', (type: 'OVERLAY' | 'PLUGIN' | 'CONTROLBOARD', callback: (path: string) => void) => {
-      Logger.info(`Creating endpoints for ${socket.id} - ${type}`)
-      this.app.get(`/login/${socket.id}`, (req, res) => {
-        if (this.connections.find((x) => x.id === socket.id)) res.send({ error: 'Already logged in.' })
-        else res.send(pug.compileFile(`${__dirname}/../pages/login.pug`)({ socket_id: socket.id, type }))
-      })
-
-      this.app.post(`/login/${socket.id}`, async (req, res) => {
-        const { email, password, token, name, type } = req.body
-
-        if (type !== 'CONTROLBOARD' && type !== 'OVERLAY' && type !== 'PLUGIN')
-          return res.status(400).send({ error: 'Invalid type.' })
-
-        if ((type === 'OVERLAY' || type === 'PLUGIN') && !name)
-          return res.status(400).send({ error: 'No name specified.' })
-
-        if (this.connections.find((x) => x.id === socket.id)) return res.send({ error: 'Already logged in.' })
-
-        let user
-
-        // Check token (if it exists), otherwise email/pass auth
-        if (token) {
-          try {
-            user = await decodeToken(token)
-          } catch (err) {
-            return res.status(401).send({ error: err.message })
-          }
-        } else {
-          if (!email || !password) return res.status(400).send({ error: 'Email or password not specified.' })
-
-          try {
-            user = await login(email, password)
-          } catch (err) {
-            return res.status(401).send({ error: err.message })
-          }
-        }
-
-        if (!user) return res.status(500).send({ error: 'An unknown error occurred.' })
-
-        if (type === 'CONTROLBOARD') {
-          this.registerCB(socket)
-          socket.join('control')
-          socket.emit('logged_in')
-          this.connections.push({
-            id: socket.id,
-            type: 'CONTROLBOARD',
-            email: user.email,
-          })
-        } else if (type === 'PLUGIN') {
-          this.connections.push({
-            name,
-            email: user.email,
-            id: socket.id,
-            rate: 0,
-            input: 0,
-            active: false,
-            group_id: process.env.NODE_ENV === 'local' ? 'TEST' : '',
-            ingame_match_guid: '',
-            type: 'PLUGIN',
-          })
-          this.registerPlugin(socket)
-          this.io.to('control').emit('plugin:activated', socket.id, name, email)
-          socket.emit('logged_in')
-          socket.join(process.env.NODE_ENV === 'local' ? ['plugin', 'TEST'] : ['plugin'])
-        } else {
-          this.connections.push({
-            name,
-            email: user.email,
-            id: socket.id,
-            group_id: process.env.NODE_ENV === 'local' ? 'TEST' : '',
-            scenes: [],
-            type: 'OVERLAY',
-          })
-          this.registerOverlay(socket)
-          socket.join(process.env.NODE_ENV === 'local' ? ['overlay', 'TEST'] : ['overlay'])
-          socket.emit('logged_in')
-          this.io.to('control').emit('overlay:activated', socket.id, name, email)
-        }
-        Logger.info(`${socket.id} logged in [${name} - ${type}]`)
-        return res.status(200).send({ message: 'Socket logged in.' })
-      })
-
-      callback(`/login/${socket.id}`)
+      if (type === 'CONTROLBOARD') {
+        this.registerCB(socket)
+        socket.join('control')
+        socket.emit('logged_in')
+        this.connections.push({
+          id: socket.id,
+          type: 'CONTROLBOARD',
+          email: 'null@rocketcast.io',
+        })
+      } else if (type === 'PLUGIN') {
+        this.connections.push({
+          name,
+          email: 'null@rocketcast.io',
+          id: socket.id,
+          input: 0,
+          rate: 0,
+          active: false,
+          group_id: process.env.NODE_ENV === 'local' ? 'TEST' : '',
+          ingame_match_guid: '',
+          type: 'PLUGIN',
+        })
+        this.registerPlugin(socket)
+        this.io.to('control').emit('plugin:activated', socket.id, name, 'null@rocketcast.io')
+        socket.emit('logged_in')
+        socket.join(process.env.NODE_ENV === 'local' ? ['plugin', 'TEST'] : ['plugin'])
+      } else {
+        this.connections.push({
+          name,
+          email: 'null@rocketcast.io',
+          id: socket.id,
+          group_id: process.env.NODE_ENV === 'local' ? 'TEST' : '',
+          scenes: [],
+          type: 'OVERLAY',
+        })
+        this.registerOverlay(socket)
+        socket.join(process.env.NODE_ENV === 'local' ? ['overlay', 'TEST'] : ['overlay'])
+        socket.emit('logged_in')
+        this.io.to('control').emit('overlay:activated', socket.id, name, 'null@rocketcast.io')
+      }
+      Logger.info(`${socket.id} logged in [DIRECT, ${name} - ${type}]`)
     })
 
     socket.on('info', (callback: (info: any) => void) => {
@@ -440,55 +337,7 @@ export class WebsocketService {
       callback()
     })
 
-    socket.on('check_for_updates', async (callback: (latest: _Object, err?: string) => void) => {
-      if (global.updatePending === true) {
-        callback(null, 'Update already complete, pending reboot.')
-        return
-      }
-
-      const latest = await getLatest()
-      if (latest === null) {
-        callback(null, 'No relays found in bucket.')
-        return
-      }
-
-      if (latest.Key.replace('relay-v', '').replace('.zip', '') === String(config.version)) {
-        callback(null, 'Already up to date.')
-        return
-      }
-
-      callback(latest)
-    })
-
-    socket.on('update', async (callback: (err?: string) => void) => {
-      if (global.pendingUpdate === true) {
-        callback('Update already complete, changes will take effect on next reboot.')
-        return
-      }
-
-      const latest = await getLatest()
-      if (latest === null) {
-        callback('No relays found in bucket.')
-        return
-      }
-
-      if (latest.Key.replace('relay-v', '').replace('.zip', '') === String(config.version)) {
-        callback('Already up to date.')
-        return
-      }
-      Logger.info('Initiating update.')
-
-      // Changes won't take effect until next boot.
-      installUpdate(latest)
-        .then((val) => {
-          Logger.info('Updated!')
-          callback()
-        })
-        .catch((err) => {
-          Logger.error('Failed to update: ' + err.message)
-          callback(err.message)
-        })
-    })
+    // UPDATE FUNCTIONALITY SCRAPPED: Not needed for Rocketcast. It clones the latest version every launch.
   }
 
   registerTestListeners = (socket: Socket) => {
@@ -566,19 +415,6 @@ export class WebsocketService {
       if (json.game === 'ROCKET_LEAGUE') {
         while (g.teams.length < 2) {
           g.teams.push({
-            roster: [],
-            colors:
-              g.teams.length === 0
-                ? {
-                    primary: '#0C88FC',
-                    secondary: '#ffffff',
-                  }
-                : {
-                    primary: '#FC7C0C',
-                    secondary: '#ffffff',
-                  },
-            name: g.teams.length === 0 ? 'Blue Team' : 'Orange Team',
-            avatar: 'https://www.dropbox.com/s/vr7lbsauae31am6/rl-logo.png?dl=1',
             score: 0,
             series: 0,
           } as RocketLeague.Team) // Create defaults

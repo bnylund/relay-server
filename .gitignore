@@ -3,6 +3,8 @@
 **/.vs
 **.env
 **/build
+**/dist
+**/bin
 yarn-error.log
 src/api/v1*
 artifacts*
