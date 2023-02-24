@@ -1,10 +1,10 @@
-FROM node:12.18-alpine
+FROM node:16
 ENV NODE_ENV=production
 ENV UPDATE_RATE=25
 WORKDIR /usr/src/app
-COPY ["./package.json", "./yarn.lock", "./.env", "npm-shrinkwrap.json*", "./"]
-RUN yarn install --prod
+COPY ["./package.json", "./yarn.lock", "npm-shrinkwrap.json*", "./"]
+RUN yarn
 COPY . .
 RUN yarn build
-EXPOSE 5555
-CMD ["yarn", "start"]
+EXPOSE 5000
+CMD ["yarn", "start:prod"]

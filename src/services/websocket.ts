@@ -86,7 +86,7 @@ export class WebsocketService {
     })
 
     socket.on('match:get', (id: string, callback: (match: Base.Match) => void) => {
-      callback(matches.find((x) => x.id === id))
+      callback(matches.find((x) => x.group_id === id))
     })
 
     socket.on('match:get_all', (callback: (matches: Base.Match[]) => void) => {
@@ -155,6 +155,18 @@ export class WebsocketService {
         this.io.to('control').emit('overlay:activated', socket.id, name, 'null@rocketcast.io')
       }
       Logger.info(`${socket.id} logged in [DIRECT, ${name} - ${type}]`)
+
+      if (!matches.find((x) => x.group_id === 'LOCALHOST')) {
+        const match = {
+          group_id: 'LOCALHOST',
+          winner: -1,
+          hasWinner: false,
+          teamSize: 3,
+          bestOf: 5,
+        }
+        console.log(`Creating new match for group LOCALHOST`)
+        matches.push(match)
+      }
     })
 
     socket.on('info', (callback: (info: any) => void) => {
@@ -239,7 +251,7 @@ export class WebsocketService {
     })
 
     socket.on('match:set_team', (id: string, teamnum: number, team: Partial<Base.Team>, cb: (err?: string) => void) => {
-      const match = matches.find((x) => x.id === id)
+      const match = matches.find((x) => x.group_id === id)
       if (!match) {
         cb('Match not found.')
         return
