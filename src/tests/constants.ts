@@ -1,4 +1,4 @@
-import { Base } from '../services/live'
+import { Base } from '../services/match'
 
 export class Websocket {
   static MATCH_ID: string = 'a1b8e4ff-8ff5-4089-b9c1-fa59472efa58'

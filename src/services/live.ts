@@ -1,103 +1,91 @@
-let matches: Base.Match[] = []
+/**
+ * 1) Connect to Rocket League
+ * 2) On message, parse event to update series score
+ * 3) Relay message to all connected overlays
+ */
+import Logger from 'js-logger'
+import WebSocket from 'reconnecting-websocket'
+import atob from 'atob'
+import WS from 'ws'
+import matches from './match'
+import { v4 } from 'uuid'
 
-export function updateMatch(id: string, data: Partial<Base.Match>) {
-  const match = matches.find((x) => x.group_id === id)
-  if (!match) {
-    return undefined
+import { WebsocketService } from './websocket'
+
+let urls = ['ws://host.docker.internal:49122', 'ws://localhost:49122']
+let idx = 0
+
+export default (wss: WebsocketService) => {
+  if (process.env.RL_HOSTS && process.env.RL_HOSTS.length > 3) {
+    urls = process.env.RL_HOSTS.split(',')
   }
-  Object.keys(data).forEach((val) => {
-    if (data[val] === null) delete match[val]
-    else match[val] = data[val]
+
+  // Try different hosts each time.
+  const ws = new WebSocket(() => urls[idx++ % urls.length], [], {
+    WebSocket: WS,
+    maxReconnectionDelay: 5000,
   })
-  return match
+
+  ws.addEventListener('open', () => {
+    Logger.info('Connected to Rocket League')
+  })
+
+  ws.addEventListener('message', (message: MessageEvent<any>) => {
+    let msg = message.data
+    if (msg.substr(0, 1) !== '{') {
+      msg = atob(message.data)
+    }
+
+    try {
+      msg = JSON.parse(msg)
+    } catch (err) {}
+
+    // Parse (not tested)
+    parseLegacyMessage(wss, msg)
+
+    // Relay
+    wss.relayEvent(msg)
+  })
+
+  return ws
 }
 
-// Base structures. Most of these values can be modified by the control board.
-export namespace Base {
-  export interface Game {
-    teams: Base.Team[]
-    winner: number
-    hasWinner: boolean
-    match_guid: string
-    [key: string]: any
-  }
+export const parseLegacyMessage = (wss: WebsocketService, message: { game?: string; event: string; data: any }) => {
+  if (!message.event) return
+  const match = matches[0]
+  if (!match) return
 
-  export interface Team {
-    info: any // Extract team info to its own field, this will be provided by an API
-    score: number
-    series: number
-    [key: string]: any
-  }
+  // Update series scores on match end
+  if (message.event === 'game:match_ended') {
+    let winning_team: number = message.data.winner_team_num
+    match.teams[winning_team].score += 1
 
-  export interface Player {
-    name: string
-    [key: string]: any
-  }
+    let winningScore = Math.ceil(match.bestOf / 2)
+    if ((match.teams[winning_team].score ?? 0) >= winningScore) {
+      match.hasWinner = true
+      match.winner = winning_team
+    }
 
-  export interface Match {
-    game?: Base.Game
-    bestOf: number
-    hasWinner: boolean
-    winner: number
-    group_id: string
-    [key: string]: any
-  }
-}
+    matches[0] = match
 
-// Anything below this point includes game-specific structures. All of these values will be auto-populated from update_state.
-export namespace RocketLeague {
-  export interface Game extends Base.Game {
-    arena: string
-    ballSpeed: number
-    ballTeam: number
-    hasTarget: boolean
-    isOT: boolean
-    isReplay: boolean
-    target: string
-    time: number
-    ballPosition: RocketLeague.Position
-    id: string
-  }
-
-  export interface Team extends Base.Team {
-    players: RocketLeague.Player[]
-  }
-
-  export interface Player extends Base.Player {
-    id: string
-    primaryID: string
-    team: number
-    score: number
-    goals: number
-    shots: number
-    assists: number
-    saves: number
-    touches: number
-    carTouches: number
-    hasCar: boolean
-    demos: number
-    speed: number
-    boost: number
-    isSonic: boolean
-    isDead: boolean
-    attacker: string
-    location: RocketLeague.Location
-    onWall: boolean
-    onGround: boolean
-    isPowersliding: boolean
-  }
-
-  export interface Location extends RocketLeague.Position {
-    roll: number
-    pitch: number
-    yaw: number
-  }
-
-  export interface Position {
-    x: number
-    y: number
-    z: number
+    if (match.hasWinner) {
+      // Pass the entire match in the game ended
+      wss.io.to('LOCALHOST').except('plugin').emit('game:ended', match, winning_team)
+      wss.io.to('LOCALHOST').except('plugin').emit('match:ended', match)
+    } else wss.io.to('LOCALHOST').except('plugin').emit('game:ended', match, winning_team)
+  } else if (message.event === 'game:match_created') {
+    // Initialize teams on match create (if not done so already)
+    if (!message.game || message.game === 'ROCKET_LEAGUE') {
+      for (let i = match.teams.length; i < 2; i++)
+        match.teams.push({
+          score: 0,
+          info: {
+            name: `${i === 0 ? 'Blue Team' : 'Orange Team'}`,
+            avatar: 'https://www.dropbox.com/s/vr7lbsauae31am6/rl-logo.png?dl=1',
+          },
+          _id: v4(),
+          createdAt: new Date(),
+        })
+    }
   }
 }
-
-export default matches

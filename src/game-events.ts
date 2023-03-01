@@ -1,4 +1,4 @@
-import { RocketLeague } from './services/live'
+import { RocketLeague } from './services/match'
 
 export interface UpdateState {
   event: string

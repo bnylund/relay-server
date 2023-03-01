@@ -3,7 +3,7 @@ import { Server as HTTPServer } from 'http'
 import { AddressInfo } from 'net'
 import { Express } from 'express'
 
-import matches, { Base, RocketLeague, updateMatch } from './live'
+import matches, { Base, RocketLeague, updateMatch } from './match'
 import Logger from 'js-logger'
 
 import config from '../../package.json'
@@ -42,6 +42,10 @@ export class WebsocketService {
         })
       }
     }, 100)
+  }
+
+  relayEvent = (data: object) => {
+    this.io.to('LOCALHOST').except('plugin').emit('game:event', data)
   }
 
   attach = (srv: HTTPServer, opts?: Partial<ServerOptions>) => {
@@ -84,6 +88,10 @@ export class WebsocketService {
         }
       }
     })
+
+    // socket.on('match:get', (callback: (match: Base.Match) => void) => {
+    //   callback(matches.find((x) => x.group_id === 'LOCALHOST'))
+    // })
 
     socket.on('match:get', (id: string, callback: (match: Base.Match) => void) => {
       callback(matches.find((x) => x.group_id === id))
@@ -155,18 +163,6 @@ export class WebsocketService {
         this.io.to('control').emit('overlay:activated', socket.id, name, 'null@rocketcast.io')
       }
       Logger.info(`${socket.id} logged in [DIRECT, ${name} - ${type}]`)
-
-      if (!matches.find((x) => x.group_id === 'LOCALHOST')) {
-        const match = {
-          group_id: 'LOCALHOST',
-          winner: -1,
-          hasWinner: false,
-          teamSize: 3,
-          bestOf: 5,
-        }
-        console.log(`Creating new match for group LOCALHOST`)
-        matches.push(match)
-      }
     })
 
     socket.on('info', (callback: (info: any) => void) => {
@@ -221,6 +217,7 @@ export class WebsocketService {
           hasWinner: false,
           teamSize: 3,
           bestOf: 5,
+          teams: [],
         }
         console.log(`Creating new match for group ${plugin.group_id}`)
         matches.push(match)
@@ -256,24 +253,23 @@ export class WebsocketService {
         cb('Match not found.')
         return
       }
-      let g = match.game ?? ({} as Base.Game)
 
-      if (teamnum >= g.teams.length || teamnum < 0) {
+      if (teamnum >= match.teams.length || teamnum < 0) {
         cb('Index out of bounds.')
         return
       }
 
-      g.teams[teamnum] = { ...g.teams[teamnum], ...team }
+      match.teams[teamnum] = { ...match.teams[teamnum], ...team }
 
       let winningScore = Math.ceil(match.bestOf / 2)
       match.hasWinner = false
-      if (((g.teams[teamnum] ?? {}).series ?? 0) >= winningScore) {
+      if (((match.teams[teamnum] ?? {}).score ?? 0) >= winningScore) {
         match.hasWinner = true
         match.winner = teamnum
       }
-      match.game = g
 
-      this.io.to('control').emit('match:team_set', id, teamnum, g.teams[teamnum])
+      this.io.to('control').emit('match:updated', id, match)
+      this.io.to('control').emit('match:team_set', id, teamnum, match.teams[teamnum])
       cb()
     })
 
@@ -338,6 +334,7 @@ export class WebsocketService {
             hasWinner: false,
             teamSize: 3,
             bestOf: 5,
+            teams: [],
           }
           console.log(`Creating new match for group ${group}`)
           matches.push(match)
@@ -416,40 +413,18 @@ export class WebsocketService {
 
     if (json.event === 'game:update_state') {
       let data = json.data
-      if (this.connections.filter((x) => x.ingame_match_guid === data.match_guid).length === 0) {
-        plugin.active = true
-      }
       plugin.ingame_match_guid = data.match_guid
-      if (!plugin.active) return
-      let g = match.game ?? ({ teams: [] } as Base.Game)
 
-      // Make game-specific updates
+      // Game-specific updates
       if (json.game === 'ROCKET_LEAGUE') {
-        while (g.teams.length < 2) {
-          g.teams.push({
+        while (match.teams.length < 2) {
+          match.teams.push({
             score: 0,
-            series: 0,
           } as RocketLeague.Team) // Create defaults
         }
-
-        // Home team
-        let allPlayers = data.players as RocketLeague.Player[]
-        g.teams[0].players = Object.values(allPlayers).filter((x) => x.team === 0)
-        g.teams[0].score = data.game.teams['0'].score
-        g.teams[0].series ??= 0
-
-        // Away team
-        g.teams[1].score = data.game.teams['1'].score
-        g.teams[1].series ??= 0
-        g.teams[1].players = Object.values(allPlayers).filter((x) => x.team === 1)
-
-        // Merge game objects
-        delete data.game.teams
-        delete data.players
-        g = { ...g, ...data.game }
       }
 
-      match.game = g
+      // match.game = g
 
       // Send out update_state to keep in sync with plugin update_state
       this.io.to(plugin.group_id).except('plugin').emit('match:update_state', match)
