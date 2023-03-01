@@ -98,7 +98,7 @@ export const bakkesWS = bakkes(websocket)
 
 // #endregion
 
-const vlog = logger(websocket)
+const vlog = logger(websocket, bakkesWS)
 
 let quit = false
 

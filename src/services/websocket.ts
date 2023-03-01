@@ -75,7 +75,11 @@ export class WebsocketService {
       // Update overlay list
       let con = this.connections.find((x) => x.id === socket.id)
       if (con) {
-        Logger.info(`${con.type === 'OVERLAY' ? 'Overlay' : 'Plugin'} disconnected. (${con.id})`)
+        // Logger.info(
+        //   `${
+        //     con.type === 'OVERLAY' ? 'Overlay' : con.type === 'CONTROLBOARD' ? 'Control Board' : 'Plugin'
+        //   } disconnected. (${con.id})`,
+        // )
         this.io.to('control').emit(`${con.type.toLowerCase()}:deactivated`, con.id)
         this.connections = this.connections.filter((x) => x.id !== con.id)
 
